@@ -50,6 +50,7 @@ const STORAGE_KEYS = {
   rosterList: 'wtl:roster:list',
   rosterData: (id: string) => `wtl:roster:${id}:data`,
   characterData: (id: string) => `wtl:roster:${id}:characters`,
+  paradiseData: (id: string) => `wtl:roster:${id}:paradise`,
   raids: 'wtl:lastRaids',
 };
 
@@ -70,6 +71,8 @@ const DEFAULT_SETTINGS = {
   hiddenBossColumns: [],
   visibleWeeklyRosters: [],
   visibleWeeklyRostersByRoster: {},
+  paradiseBetaUnlocked: false,
+  paradiseEnabled: false,
 };
 
 const inMemory = new Map<string, unknown>(); // Fallback if localStorage is unavailable
@@ -330,6 +333,18 @@ async function loadCharacterData(rosterId: string): Promise<Record<string, unkno
 
 async function saveCharacterData(rosterId: string, data: Record<string, unknown> | null | undefined): Promise<boolean> {
   writeJSON(STORAGE_KEYS.characterData(rosterId), data || {});
+  return true;
+}
+
+async function loadParadiseData(rosterId: string) {
+  return readJSON(STORAGE_KEYS.paradiseData(rosterId), { weekKey: '', data: {} });
+}
+
+async function saveParadiseData(
+  rosterId: string,
+  data: { weekKey: string; data: Record<string, { elysian: boolean; crucible: boolean; hell: boolean }> } | null | undefined,
+): Promise<boolean> {
+  writeJSON(STORAGE_KEYS.paradiseData(rosterId), data || { weekKey: '', data: {} });
   return true;
 }
 
@@ -739,6 +754,8 @@ const api: AppApi = {
   saveRoster,
   loadCharacterData,
   saveCharacterData,
+  loadParadiseData,
+  saveParadiseData,
   browseDatabaseFile,
   checkDatabaseExists,
   getDatabaseAccessSupport,

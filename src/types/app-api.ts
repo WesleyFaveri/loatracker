@@ -15,6 +15,8 @@ export type SettingsPayload = {
   hiddenBossColumns: string[];
   visibleWeeklyRosters: string[];
   visibleWeeklyRostersByRoster: Record<string, string[]>;
+  paradiseBetaUnlocked: boolean;
+  paradiseEnabled: boolean;
 } & Record<string, unknown>;
 
 export type RosterMeta = {
@@ -28,7 +30,21 @@ export type RosterCharacter = {
   class: string;
   ilvl: number;
   visible?: boolean;
+  visibleInParadise?: boolean;
   combatPower?: number | null;
+};
+
+export type ParadiseRaidKey = 'elysian' | 'crucible' | 'hell';
+
+export type ParadiseCharacterEntry = {
+  elysian: boolean;
+  crucible: boolean;
+  hell: boolean;
+};
+
+export type ParadiseData = {
+  weekKey: string;
+  data: Record<string, ParadiseCharacterEntry>;
 };
 
 export type RosterPayload = {
@@ -83,6 +99,9 @@ export interface AppApi {
 
   loadCharacterData(rosterId: string): Promise<Record<string, unknown>>;
   saveCharacterData(rosterId: string, data: Record<string, unknown> | null | undefined): Promise<boolean>;
+
+  loadParadiseData(rosterId: string): Promise<ParadiseData>;
+  saveParadiseData(rosterId: string, data: ParadiseData | null | undefined): Promise<boolean>;
 
   getWeeklyResetPeriod(): Promise<{ start: number; end: number }>;
   getRaids(): Promise<unknown>;

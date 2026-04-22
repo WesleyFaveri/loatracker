@@ -24,6 +24,7 @@
     removeCharacter as removeCharacterFromState,
     reorderNames,
     toggleCharacterVisibility,
+    toggleCharacterParadiseVisibility,
     upsertCharacter,
     type RosterEntry,
     type SortType,
@@ -56,6 +57,7 @@
   let totalCharacters: number;
   let visibleCharacters: number;
   let unsubscribeRosterChanges: (() => void) | null = null;
+  let paradiseEnabled = false;
   let pendingRemoveCharacterName = '';
   let removeCharacterConfirmOpen = false;
   let characterFormOpen = false;
@@ -91,10 +93,31 @@
   $: hiddenCharacters = Math.max(0, totalCharacters - visibleCharacters);
   $: refreshRelativeLabel = formatRelativeTime(lastRefreshAt, relativeTimeTick);
 
+  async function refreshParadiseEnabled() {
+    try {
+      const settings = await api.loadSettings?.();
+      paradiseEnabled = Boolean(settings?.paradiseBetaUnlocked) && Boolean(settings?.paradiseEnabled);
+    } catch {
+      paradiseEnabled = false;
+    }
+  }
+
+  function onRosterPageSettingsChanged(event: Event) {
+    const detail = (event as CustomEvent).detail as { settings?: any } | undefined;
+    const settings = detail?.settings;
+    if (settings) {
+      paradiseEnabled = Boolean(settings.paradiseBetaUnlocked) && Boolean(settings.paradiseEnabled);
+    } else {
+      void refreshParadiseEnabled();
+    }
+  }
+
   onMount(async () => {
     await window.__API_READY__;
     await loadRosterData();
+    await refreshParadiseEnabled();
     document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('settingsChanged', onRosterPageSettingsChanged as EventListener);
 
     let isInitialRosterSync = true;
     unsubscribeRosterChanges = rosterChangeVersion.subscribe(() => {
@@ -122,6 +145,7 @@
 
   onDestroy(() => {
     document.removeEventListener('click', handleDocumentClick);
+    document.removeEventListener('settingsChanged', onRosterPageSettingsChanged as EventListener);
     unsubscribeRosterChanges?.();
     unsubscribeRosterChanges = null;
     if (refreshCooldownTimer) {
@@ -711,6 +735,11 @@
     await persistRoster(nextRoster, [...order]);
   }
 
+  async function toggleParadiseVisibility(name: string) {
+    const nextRoster = toggleCharacterParadiseVisibility(roster, name);
+    await persistRoster(nextRoster, [...order]);
+  }
+
   function openBulkImportModal() {
     if (loading) return;
     bulkImportModalOpen = true;
@@ -906,6 +935,16 @@
             {character.data.visible !== false ? 'Hide' : 'Show'} in Weekly
           </button>
 
+          {#if paradiseEnabled}
+            <button
+              type="button"
+              class="hide-paradise-btn"
+              on:click={() => toggleParadiseVisibility(character.name)}
+            >
+              {character.data.visibleInParadise === true ? 'Hide' : 'Show'} in Paradise
+            </button>
+          {/if}
+
           <div
             class="remove-icon"
             title="Remove character"
@@ -1038,3 +1077,24 @@
     onImported={onBulkImportDone}
   />
 </section>
+
+<style>
+  :global(#roster-tab .character-card .card-actions:has(.hide-paradise-btn)) {
+    grid-template-rows: auto auto auto;
+  }
+  :global(#roster-tab .character-card .card-actions:has(.hide-paradise-btn) .remove-icon) {
+    grid-row: 2 / span 2;
+  }
+  :global(#roster-tab .character-card .hide-paradise-btn) {
+    grid-column: 1;
+    grid-row: 3;
+    background: color-mix(in srgb, var(--color-surface-light) 84%, var(--color-surface));
+    white-space: nowrap;
+  }
+  :global(#roster-tab .character-card .hide-paradise-btn:hover) {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+    border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border));
+    transform: translateY(-1px);
+  }
+</style>

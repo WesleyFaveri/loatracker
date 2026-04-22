@@ -15,8 +15,8 @@
   import HowToFab from './components/HowToFab.svelte';
   import { rosterChangeVersion } from './stores/rosterSync';
 
-  const ROUTES = ['weekly', 'friends', 'custom', 'settings', 'howto'];
-  const MAIN_ROUTES = ['weekly', 'friends', 'custom', 'settings'] as const;
+  const ROUTES = ['weekly', 'friends', 'paradise', 'custom', 'settings', 'howto'];
+  const MAIN_ROUTES = ['weekly', 'friends', 'paradise', 'custom', 'settings'] as const;
   const MODAL_ROUTES = ['howto'] as const;
   const SETTINGS_SECTIONS = ['general', 'rosters', 'tracker', 'database', 'about'] as const;
   type AppRoute = (typeof ROUTES)[number];
@@ -96,9 +96,12 @@
   let highlightSettingsButton = false;
   let weeklyPagePromise: Promise<any> | null = null;
   let friendsPagePromise: Promise<any> | null = null;
+  let paradisePagePromise: Promise<any> | null = null;
   let customPagePromise: Promise<any> | null = null;
   let settingsLayoutPromise: Promise<any> | null = null;
   let howToPagePromise: Promise<any> | null = null;
+  let paradiseBetaUnlocked = false;
+  let paradiseEnabled = false;
 
   function loadWeeklyPage() {
     weeklyPagePromise ??= import('./features/weekly/WeeklyPage.svelte');
@@ -108,6 +111,11 @@
   function loadFriendsPage() {
     friendsPagePromise ??= import('./features/friends/FriendsPage.svelte');
     return friendsPagePromise;
+  }
+
+  function loadParadisePage() {
+    paradisePagePromise ??= import('./features/paradise/ParadisePage.svelte');
+    return paradisePagePromise;
   }
 
   function loadCustomTabPage() {
@@ -130,11 +138,22 @@
   }
 
   function asMainRoute(route: AppRoute): MainRoute {
-    if (route === 'friends' || route === 'custom' || route === 'settings') return route;
+    if (route === 'friends' || route === 'paradise' || route === 'custom' || route === 'settings') return route;
     return 'weekly';
   }
 
   $: activeMainRoute = isModalRoute(currentRoute) ? previousMainRoute : asMainRoute(currentRoute);
+  $: headerTabs = (paradiseEnabled
+    ? ['weekly', 'friends', 'paradise', 'custom']
+    : ['weekly', 'friends', 'custom']) as readonly MainRoute[];
+  $: effectiveMainRoute = (activeMainRoute === 'paradise' && !paradiseEnabled) ? 'weekly' : activeMainRoute;
+
+  function getTabLabel(route: MainRoute): string {
+    if (route === 'weekly') return 'Weekly Tracker';
+    if (route === 'friends') return 'Friends Roster(WIP)';
+    if (route === 'paradise') return 'Paradise Tracker';
+    return '';
+  }
 
   function onHashChange() {
     if (redirectLegacyRosterHash()) {
@@ -744,11 +763,72 @@
     await tryAutoUploadOnAppFocus();
   }
 
+  async function syncParadiseFlagsFromSettings() {
+    try {
+      const settings = await api.loadSettings?.();
+      paradiseBetaUnlocked = settings?.paradiseBetaUnlocked === true;
+      paradiseEnabled = paradiseBetaUnlocked && settings?.paradiseEnabled === true;
+    } catch {
+      paradiseBetaUnlocked = false;
+      paradiseEnabled = false;
+    }
+  }
+
+  async function unlockParadiseBeta() {
+    try {
+      const settings = await api.loadSettings?.();
+      if (settings?.paradiseBetaUnlocked === true) {
+        paradiseBetaUnlocked = true;
+        paradiseEnabled = settings?.paradiseEnabled === true;
+        return;
+      }
+      await api.saveSettings?.({ ...(settings || {}), paradiseBetaUnlocked: true } as any);
+      paradiseBetaUnlocked = true;
+      paradiseEnabled = (settings?.paradiseEnabled === true);
+      document.dispatchEvent(new CustomEvent('settingsChanged', {
+        detail: { settings: { ...(settings || {}), paradiseBetaUnlocked: true } },
+      }));
+      console.info('[Paradise] BETA unlocked. Open Settings → General to enable the feature.');
+    } catch (err) {
+      console.warn('[Paradise] Failed to unlock beta', err);
+    }
+  }
+
+  function installParadiseConsoleFlag() {
+    try {
+      Object.defineProperty(window, 'ENABLE_PARADISE_BETA', {
+        configurable: true,
+        get() { return paradiseBetaUnlocked; },
+        set(value: unknown) {
+          if (value === true) {
+            void unlockParadiseBeta();
+          }
+        },
+      });
+    } catch (err) {
+      console.warn('[Paradise] Failed to install console flag', err);
+    }
+  }
+
+  function onSettingsChanged(event: Event) {
+    const detail = (event as CustomEvent).detail as { settings?: any } | undefined;
+    const settings = detail?.settings;
+    if (!settings) {
+      void syncParadiseFlagsFromSettings();
+      return;
+    }
+    paradiseBetaUnlocked = settings.paradiseBetaUnlocked === true;
+    paradiseEnabled = paradiseBetaUnlocked && settings.paradiseEnabled === true;
+  }
+
   onMount(() => {
     donateButton = mountSupportDonateButton();
     window.addEventListener('wtl-close-modal', onWindowCloseModalRequest as EventListener);
     document.addEventListener('visibilitychange', onAppVisibilityChange);
     document.addEventListener('wtl-highlight-settings-cta', onHighlightSettingsCta as EventListener);
+    document.addEventListener('settingsChanged', onSettingsChanged as EventListener);
+    installParadiseConsoleFlag();
+    void syncParadiseFlagsFromSettings();
     disableBrowserInputSuggestions();
     startInputAutocompleteObserver();
     startModalFocusObserver();
@@ -771,6 +851,7 @@
     window.removeEventListener('wtl-close-modal', onWindowCloseModalRequest as EventListener);
     document.removeEventListener('visibilitychange', onAppVisibilityChange);
     document.removeEventListener('wtl-highlight-settings-cta', onHighlightSettingsCta as EventListener);
+    document.removeEventListener('settingsChanged', onSettingsChanged as EventListener);
 
     if (modalFocusObserver) {
       modalFocusObserver.disconnect();
@@ -820,15 +901,15 @@
 <main id="main-content">
   <header class="header">
     <div class="tabs" role="tablist" aria-label="Application sections">
-    {#each ['weekly', 'friends', 'custom'] as const as route (route)}
+    {#each headerTabs as route (route)}
       <button
         id={getTabButtonId(route)}
         class="tab-button"
         class:icon-tab={route === 'custom'}
-        class:active={activeMainRoute === route}
+        class:active={effectiveMainRoute === route}
         data-tab={route}
         role="tab"
-        aria-selected={activeMainRoute === route}
+        aria-selected={effectiveMainRoute === route}
         aria-controls={`${route}-tab`}
         aria-label={route === 'custom' ? 'Custom Tab' : undefined}
         title={route === 'custom' ? 'Custom Tab' : undefined}
@@ -841,7 +922,7 @@
             <path d="M9 8h8"/><path d="M9 12h8"/><path d="M9 16h5"/>
           </svg>
         {:else}
-          {route === 'weekly' ? 'Weekly Tracker' : 'Friends Roster(WIP)'}
+          {getTabLabel(route)}
         {/if}
       </button>
     {/each}
@@ -855,19 +936,23 @@
     </div>
   </header>
 
-  {#if activeMainRoute === 'weekly'}
+  {#if effectiveMainRoute === 'weekly'}
     {#await loadWeeklyPage() then weeklyPageModule}
       <svelte:component this={weeklyPageModule.default} />
     {/await}
-  {:else if activeMainRoute === 'friends'}
+  {:else if effectiveMainRoute === 'friends'}
     {#await loadFriendsPage() then friendsPageModule}
       <svelte:component this={friendsPageModule.default} />
     {/await}
-  {:else if activeMainRoute === 'custom'}
+  {:else if effectiveMainRoute === 'paradise'}
+    {#await loadParadisePage() then paradisePageModule}
+      <svelte:component this={paradisePageModule.default} />
+    {/await}
+  {:else if effectiveMainRoute === 'custom'}
     {#await loadCustomTabPage() then customPageModule}
       <svelte:component this={customPageModule.default} />
     {/await}
-  {:else if activeMainRoute === 'settings'}
+  {:else if effectiveMainRoute === 'settings'}
     {#await loadSettingsLayout() then settingsLayoutModule}
       <svelte:component
         this={settingsLayoutModule.default}
@@ -876,7 +961,7 @@
       />
     {/await}
   {:else}
-    <section class="tab-content active" id={`${activeMainRoute}-tab`} aria-live="polite">
+    <section class="tab-content active" id={`${effectiveMainRoute}-tab`} aria-live="polite">
       <h2>Route</h2>
       <p>Page in preparation.</p>
     </section>

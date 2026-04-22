@@ -55,6 +55,7 @@ export function normalizeCharacter(value: unknown): RosterCharacter {
       class: 'Unknown',
       ilvl: 0,
       visible: true,
+      visibleInParadise: false,
       combatPower: null,
     };
   }
@@ -80,6 +81,7 @@ export function normalizeCharacter(value: unknown): RosterCharacter {
     class: normalizedClass,
     ilvl: Number.isFinite(normalizedIlvl) ? normalizedIlvl : 0,
     visible: candidate.visible !== false,
+    visibleInParadise: candidate.visibleInParadise === true,
     combatPower: Number.isFinite(normalizedCombatPower) && normalizedCombatPower > 0 ? normalizedCombatPower : null,
   };
 }
@@ -205,6 +207,17 @@ export function toggleCharacterVisibility(roster: Record<string, unknown>, name:
     [name]: {
       ...current,
       visible: !(current.visible !== false),
+    },
+  };
+}
+
+export function toggleCharacterParadiseVisibility(roster: Record<string, unknown>, name: string) {
+  const current = normalizeCharacter(roster[name]);
+  return {
+    ...roster,
+    [name]: {
+      ...current,
+      visibleInParadise: !current.visibleInParadise,
     },
   };
 }
