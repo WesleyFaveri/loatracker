@@ -12,14 +12,17 @@
   import { normalizeFriendsConfig } from './features/friends/config';
   import type { FriendsRosterConfig } from './features/friends/types';
   import RosterSwitcher from './components/RosterSwitcher.svelte';
+  import HowToFab from './components/HowToFab.svelte';
   import { rosterChangeVersion } from './stores/rosterSync';
 
-  const ROUTES = ['weekly', 'roster', 'friends', 'custom', 'settings', 'wizard', 'howto'];
-  const MAIN_ROUTES = ['weekly', 'roster', 'friends', 'custom'] as const;
-  const MODAL_ROUTES = ['settings', 'wizard', 'howto'] as const;
+  const ROUTES = ['weekly', 'friends', 'custom', 'settings', 'howto'];
+  const MAIN_ROUTES = ['weekly', 'friends', 'custom', 'settings'] as const;
+  const MODAL_ROUTES = ['howto'] as const;
+  const SETTINGS_SECTIONS = ['general', 'rosters', 'tracker', 'database', 'about'] as const;
   type AppRoute = (typeof ROUTES)[number];
   type ModalRoute = (typeof MODAL_ROUTES)[number];
   type MainRoute = (typeof MAIN_ROUTES)[number];
+  type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
   const api: AppApi = window.api;
   const ROSTER_META_KEYS = new Set(['dailyData']);
   const APP_FOCUS_AUTO_RAID_DEDUP_MS = 1200;
@@ -40,33 +43,66 @@
     ui.showToast(message, type);
   }
 
-  function normalizeRoute(input: string): AppRoute {
+  function parseHash(input: string): { route: AppRoute; section: SettingsSection } {
     const value = input.replace(/^#\/?/, '').trim().toLowerCase();
-    return (ROUTES as readonly string[]).includes(value) ? (value as AppRoute) : 'weekly';
+    const [head, sub] = value.split('/');
+    const route: AppRoute = (ROUTES as readonly string[]).includes(head) ? (head as AppRoute) : 'weekly';
+    const section: SettingsSection = route === 'settings' && (SETTINGS_SECTIONS as readonly string[]).includes(sub)
+      ? (sub as SettingsSection)
+      : 'general';
+    return { route, section };
   }
 
-  let currentRoute: AppRoute = normalizeRoute(window.location.hash);
-  let previousMainRoute: MainRoute = currentRoute === 'roster' || currentRoute === 'friends' ? currentRoute : 'weekly';
+  function normalizeRoute(input: string): AppRoute {
+    return parseHash(input).route;
+  }
+
+  /**
+   * Back-compat redirect for bookmarks pointing at the removed top-level
+   * `#roster` route. Collapses `#roster`, `#roster/`, and any sub-paths to
+   * the new Rosters settings section. Returns true when a redirect was issued
+   * so callers can short-circuit further processing.
+   */
+  function redirectLegacyRosterHash(): boolean {
+    const value = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+    const head = value.split('/')[0];
+    if (head === 'roster') {
+      window.location.hash = 'settings/rosters';
+      return true;
+    }
+    return false;
+  }
+
+  redirectLegacyRosterHash();
+  const initialParsed = parseHash(window.location.hash);
+  let currentRoute: AppRoute = initialParsed.route;
+  let settingsSection: SettingsSection = initialParsed.section;
+  // Seed the background-route memory from the initial hash so that opening a
+  // modal (e.g. #howto) immediately reflects the section the user loaded on,
+  // not a hardcoded default.
+  let previousMainRoute: MainRoute = isModalRoute(initialParsed.route)
+    ? 'weekly'
+    : asMainRoute(initialParsed.route);
+  // Full raw hash of the last non-modal route (including any settings
+  // subsection). Used to restore the exact location the user was on before
+  // opening a modal like #howto, e.g. #settings/tracker → #howto → close
+  // should land back on #settings/tracker rather than collapsing to #settings.
+  let previousNonModalHash: string = isModalRoute(initialParsed.route)
+    ? 'weekly'
+    : window.location.hash.replace(/^#\/?/, '') || 'weekly';
   let modalFocusObserver: MutationObserver | null = null;
   let modalFocusRaf = 0;
   let lastTrackedModal: HTMLElement | null = null;
   let highlightSettingsButton = false;
   let weeklyPagePromise: Promise<any> | null = null;
-  let rosterPagePromise: Promise<any> | null = null;
   let friendsPagePromise: Promise<any> | null = null;
   let customPagePromise: Promise<any> | null = null;
-  let settingsPagePromise: Promise<any> | null = null;
-  let wizardPagePromise: Promise<any> | null = null;
+  let settingsLayoutPromise: Promise<any> | null = null;
   let howToPagePromise: Promise<any> | null = null;
 
   function loadWeeklyPage() {
     weeklyPagePromise ??= import('./features/weekly/WeeklyPage.svelte');
     return weeklyPagePromise;
-  }
-
-  function loadRosterPage() {
-    rosterPagePromise ??= import('./features/roster/RosterPage.svelte');
-    return rosterPagePromise;
   }
 
   function loadFriendsPage() {
@@ -79,14 +115,9 @@
     return customPagePromise;
   }
 
-  function loadSettingsPage() {
-    settingsPagePromise ??= import('./features/settings/SettingsPage.svelte');
-    return settingsPagePromise;
-  }
-
-  function loadWizardPage() {
-    wizardPagePromise ??= import('./features/wizard/WizardPage.svelte');
-    return wizardPagePromise;
+  function loadSettingsLayout() {
+    settingsLayoutPromise ??= import('./features/settings/SettingsLayout.svelte');
+    return settingsLayoutPromise;
   }
 
   function loadHowToPage() {
@@ -99,31 +130,49 @@
   }
 
   function asMainRoute(route: AppRoute): MainRoute {
-    if (route === 'roster' || route === 'friends' || route === 'custom') return route;
+    if (route === 'friends' || route === 'custom' || route === 'settings') return route;
     return 'weekly';
   }
 
   $: activeMainRoute = isModalRoute(currentRoute) ? previousMainRoute : asMainRoute(currentRoute);
 
   function onHashChange() {
-    const next = normalizeRoute(window.location.hash);
-    if (!isModalRoute(next)) {
-      previousMainRoute = asMainRoute(next);
+    if (redirectLegacyRosterHash()) {
+      // The redirect triggers another hashchange that will run this handler
+      // again with the rewritten value; skip processing the legacy hash.
+      return;
     }
-    if (next === 'settings') {
+    const parsed = parseHash(window.location.hash);
+    if (!isModalRoute(parsed.route)) {
+      previousMainRoute = asMainRoute(parsed.route);
+      previousNonModalHash = window.location.hash.replace(/^#\/?/, '') || 'weekly';
+    }
+    if (parsed.route === 'settings') {
       highlightSettingsButton = false;
     }
-    currentRoute = next;
+    if (parsed.route !== currentRoute) {
+      currentRoute = parsed.route;
+    }
+    // Only sync settingsSection when we're actually on a settings route. When
+    // a modal like #howto is opened on top of #settings/tracker, parseHash
+    // returns section: 'general' (the fallback), which would otherwise flip
+    // the underlying settings page behind the modal.
+    if (parsed.route === 'settings' && parsed.section !== settingsSection) {
+      settingsSection = parsed.section;
+    }
   }
 
-  function goTo(route: AppRoute) {
-    if (!isModalRoute(route)) {
-      previousMainRoute = asMainRoute(route);
+  function goTo(route: AppRoute | `settings/${SettingsSection}`) {
+    const raw = String(route);
+    const parsed = parseHash('#' + raw);
+    if (!isModalRoute(parsed.route)) {
+      previousMainRoute = asMainRoute(parsed.route);
+      previousNonModalHash = raw;
     }
-    if (route === 'settings') {
+    if (parsed.route === 'settings') {
       highlightSettingsButton = false;
     }
-    window.location.hash = route;
+    window.location.hash = raw;
   }
 
   function onHighlightSettingsCta() {
@@ -131,12 +180,7 @@
   }
 
   function closeModal() {
-    window.location.hash = previousMainRoute;
-  }
-
-  function goToRosterFromWizard() {
-    previousMainRoute = 'roster';
-    window.location.hash = 'roster';
+    window.location.hash = previousNonModalHash || previousMainRoute;
   }
 
   function onWindowKeyDown(event: KeyboardEvent) {
@@ -203,15 +247,13 @@
     const modalCandidates = Array.from(document.querySelectorAll([
       '[role="alertdialog"]',
       '[role="dialog"][aria-modal="true"]',
-      '.wizard-modal',
       '.settings-confirm-overlay',
       '#friends-setup-modal',
       '#friends-heatmap-modal',
       '#column-settings-modal',
       '#custom-column-settings-modal',
-      '#settings-modal',
       '#howto-modal',
-      '#wizard-preview-modal',
+      '#roster-manage-modal',
     ].join(', '))) as HTMLElement[];
 
     const visibleModals = modalCandidates.filter(isElementVisible);
@@ -528,8 +570,13 @@
 
       const shouldOpenWizard = await shouldOpenSetupAssistant(activeRosterId);
       lastSetupCheckedRosterId = activeRosterId;
-      if (shouldOpenWizard && currentRoute !== 'wizard') {
-        window.location.hash = 'wizard';
+      // Only redirect first-time users when they are NOT already in Settings.
+      // Any Settings subsection (Rosters/Tracker/Database) is a valid place to
+      // onboard from — forcing a jump to settings/tracker on top of an
+      // intentional navigation (e.g. user opened Roster Management) feels like
+      // a bug.
+      if (shouldOpenWizard && currentRoute !== 'settings') {
+        window.location.hash = 'settings/tracker';
       }
     } catch (error) {
       void reportError(error, {
@@ -773,7 +820,7 @@
 <main id="main-content">
   <header class="header">
     <div class="tabs" role="tablist" aria-label="Application sections">
-    {#each MAIN_ROUTES as route (route)}
+    {#each ['weekly', 'friends', 'custom'] as const as route (route)}
       <button
         id={getTabButtonId(route)}
         class="tab-button"
@@ -794,7 +841,7 @@
             <path d="M9 8h8"/><path d="M9 12h8"/><path d="M9 16h5"/>
           </svg>
         {:else}
-          {route === 'weekly' ? 'Weekly Tracker' : route === 'roster' ? 'Roster Management' : 'Friends Roster(WIP)'}
+          {route === 'weekly' ? 'Weekly Tracker' : 'Friends Roster(WIP)'}
         {/if}
       </button>
     {/each}
@@ -802,17 +849,8 @@
 
     <div class="header-buttons">
       <RosterSwitcher />
-      <button id="howto-open-btn" class="header-help-btn" type="button" on:click={() => goTo('howto')}>How To Use</button>
-      <button id="wizard-btn" class="header-icon-btn" aria-label="Setup Assistant" title="Setup Assistant" on:click={() => goTo('wizard')}>
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M12 3C7.03 3 3 4.79 3 7v10c0 2.21 4.03 4 9 4s9-1.79 9-4V7c0-2.21-4.03-4-9-4Zm0 2c4.42 0 7 .99 7 2s-2.58 2-7 2-7-.99-7-2 2.58-2 7-2Zm0 14c-4.42 0-7-.99-7-2v-2.1C6.46 15.6 8.98 16 12 16s5.54-.4 7-1.1V17c0 1.01-2.58 2-7 2Zm0-5c-4.42 0-7-.99-7-2V9.9C6.46 10.6 8.98 11 12 11s5.54-.4 7-1.1V12c0 1.01-2.58 2-7 2Z" fill="currentColor"/>
-          <path d="M16.5 2.5h-1.4v1.8h-1.8v1.4h1.8v1.8h1.4V5.7h1.8V4.3h-1.8V2.5Zm-6.7 6.9h1.8V7.6h1.4v1.8h1.8v1.4h-1.8v1.8h-1.4v-1.8H9.8V9.4Z" fill="currentColor"/>
-        </svg>
-      </button>
-      <button id="settings-btn" class="header-icon-btn" class:settings-cta-highlight={highlightSettingsButton} aria-label="Settings" title="Settings" on:click={() => goTo('settings')}>
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M19.14 12.94c.04-.31.06-.62.06-.94s-.02-.63-.07-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.95l-.36-2.54A.5.5 0 0 0 13.88 2h-3.76a.5.5 0 0 0-.5.43l-.36 2.54c-.58.23-1.13.55-1.63.95l-2.39-.96a.5.5 0 0 0-.6.22L2.72 8.5a.5.5 0 0 0 .12.64l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.4 1.05.72 1.63.95l.36 2.54a.5.5 0 0 0 .5.43h3.76a.5.5 0 0 0 .5-.43l.36-2.54c.58-.23 1.13-.55 1.63-.95l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z" fill="currentColor"/>
-        </svg>
+      <button id="settings-btn" class="header-text-btn" class:active={activeMainRoute === 'settings'} class:settings-cta-highlight={highlightSettingsButton} aria-label="Settings" title="Settings" on:click={() => goTo('settings')}>
+        Settings
       </button>
     </div>
   </header>
@@ -820,10 +858,6 @@
   {#if activeMainRoute === 'weekly'}
     {#await loadWeeklyPage() then weeklyPageModule}
       <svelte:component this={weeklyPageModule.default} />
-    {/await}
-  {:else if activeMainRoute === 'roster'}
-    {#await loadRosterPage() then rosterPageModule}
-      <svelte:component this={rosterPageModule.default} />
     {/await}
   {:else if activeMainRoute === 'friends'}
     {#await loadFriendsPage() then friendsPageModule}
@@ -833,6 +867,14 @@
     {#await loadCustomTabPage() then customPageModule}
       <svelte:component this={customPageModule.default} />
     {/await}
+  {:else if activeMainRoute === 'settings'}
+    {#await loadSettingsLayout() then settingsLayoutModule}
+      <svelte:component
+        this={settingsLayoutModule.default}
+        section={settingsSection}
+        onSelectSection={(next: string) => goTo(`settings/${next}`)}
+      />
+    {/await}
   {:else}
     <section class="tab-content active" id={`${activeMainRoute}-tab`} aria-live="polite">
       <h2>Route</h2>
@@ -840,36 +882,17 @@
     </section>
   {/if}
 
-  {#if isModalRoute(currentRoute)}
-    {#if currentRoute === 'settings'}
-      <div id="settings-modal" style="display: block;" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="0" on:click={onOverlayClick} on:keydown={onOverlayKeyDown}>
-        <div class="modal-overlay"></div>
-        <div class="modal-content settings-modal-content" role="document">
-          <button id="settings-close" class="close-btn" aria-label="Close Settings" on:click={closeModal}>×</button>
-          {#await loadSettingsPage() then settingsPageModule}
-            <svelte:component this={settingsPageModule.default} onRequestClose={closeModal} />
-          {/await}
-        </div>
+  {#if isModalRoute(currentRoute) && currentRoute === 'howto'}
+    <div id="howto-modal" class="howto-modal" style="display: flex;" role="dialog" aria-modal="true" aria-labelledby="howto-title" tabindex="0" on:click={onOverlayClick} on:keydown={onOverlayKeyDown}>
+      <div class="modal-overlay"></div>
+      <div class="modal-content howto-content" role="document">
+        <button id="howto-close" class="close-btn" aria-label="Close How To Use" on:click={closeModal}>×</button>
+        {#await loadHowToPage() then howToPageModule}
+          <svelte:component this={howToPageModule.default} />
+        {/await}
       </div>
-    {:else if currentRoute === 'howto'}
-      <div id="howto-modal" class="howto-modal" style="display: flex;" role="dialog" aria-modal="true" aria-labelledby="howto-title" tabindex="0" on:click={onOverlayClick} on:keydown={onOverlayKeyDown}>
-        <div class="modal-overlay"></div>
-        <div class="modal-content howto-content" role="document">
-          <button id="howto-close" class="close-btn" aria-label="Close How To Use" on:click={closeModal}>×</button>
-          {#await loadHowToPage() then howToPageModule}
-            <svelte:component this={howToPageModule.default} />
-          {/await}
-        </div>
-      </div>
-    {:else}
-      <div id="wizard-preview-modal" class="wizard-modal" style="display: block;" role="dialog" aria-modal="true" aria-labelledby="wizard-title" tabindex="0" on:click={onOverlayClick} on:keydown={onOverlayKeyDown}>
-        <div class="modal-overlay"></div>
-        <div class="modal-content wizard-modal-content" role="document">
-          {#await loadWizardPage() then wizardPageModule}
-            <svelte:component this={wizardPageModule.default} onRequestClose={closeModal} onNavigateToRoster={goToRosterFromWizard} />
-          {/await}
-        </div>
-      </div>
-    {/if}
+    </div>
   {/if}
+
+  <HowToFab onOpen={() => goTo('howto')} />
 </main>

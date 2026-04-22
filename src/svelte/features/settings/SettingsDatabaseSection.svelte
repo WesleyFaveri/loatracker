@@ -5,12 +5,15 @@
   import { withAsyncError } from '../../utils/errorWrappers';
   import { ERROR_CODES } from '../../utils/errorCodes';
   import DbGuideModal from '../../components/DbGuideModal.svelte';
+  import SettingsHeader from './SettingsHeader.svelte';
   import type { AppApi, DbAccessSupport, DbPermissionStatus, SettingsPayload } from '../../../types/app-api';
 
-  type SettingsState = SettingsPayload;
-
-  type ConfirmAction = 'reset-app' | null;
-  export let onRequestClose: (() => void) | undefined = undefined;
+  /**
+   * Database import / permission management UI. Previously lived inside
+   * SettingsTrackerSection alongside the onboarding wizard; extracted into
+   * its own section so Tracker Integration can focus on the wizard and the
+   * database workflow has breathing room under its own nav entry.
+   */
 
   const ui = new UIHelper();
   const api: AppApi = window.api;
@@ -33,17 +36,25 @@
   let dbLoadedFile = 'Not loaded';
   let dbLastLoaded = 'Never';
   let dbGuideOpen = false;
-  let confirmOpen = false;
-  let confirmAction: ConfirmAction = null;
-  let confirmTitle = '';
-  let confirmMessage = '';
-  let confirmRequireText = '';
-  let confirmInput = '';
-  let confirmBusy = false;
 
-  $: confirmMatches = !confirmRequireText || confirmInput.trim() === confirmRequireText;
+  let settings: SettingsPayload = {
+    dbPath: '',
+    dbLastLoadedAt: null,
+    autoRaidUpdateMinutes: 0,
+    autoRaidUpdateOnFocus: false,
+    timezone: 'browser',
+    dateFormat: 'browser',
+    timeFormat: 'browser',
+    closeToTray: false,
+    closeToTrayPrompted: false,
+    hiddenColumns: [],
+    hiddenColumnsByRoster: {},
+    hiddenBossColumns: [],
+    visibleWeeklyRosters: [],
+    visibleWeeklyRostersByRoster: {},
+  };
+
   $: dropZoneDragover = dbDragDepth > 0;
-
   $: permissionToneClass = dbPermission.toLowerCase().startsWith('granted')
     ? 'granted'
     : dbPermission.toLowerCase().startsWith('denied')
@@ -62,26 +73,9 @@
             ? 'Opera'
             : dbAccessSupport?.browser === 'chrome'
               ? 'Chrome'
-      : dbAccessSupport?.browser === 'chromium'
-        ? 'Chromium'
-        : 'this browser';
-
-  let settings: SettingsState = {
-    dbPath: '',
-    dbLastLoadedAt: null,
-    autoRaidUpdateMinutes: 0,
-    autoRaidUpdateOnFocus: false,
-    timezone: 'browser',
-    dateFormat: 'browser',
-    timeFormat: 'browser',
-    closeToTray: false,
-    closeToTrayPrompted: false,
-    hiddenColumns: [],
-    hiddenColumnsByRoster: {},
-    hiddenBossColumns: [],
-    visibleWeeklyRosters: [],
-    visibleWeeklyRostersByRoster: {},
-  };
+              : dbAccessSupport?.browser === 'chromium'
+                ? 'Chromium'
+                : 'this browser';
 
   onMount(async () => {
     await initialize();
@@ -91,7 +85,7 @@
     ui.showToast(message, type);
   }
 
-  function formatLoadedAt(value: number | null) {
+  function formatLoadedAt(value: number | null | undefined) {
     if (!value) return 'Never';
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return 'Never';
@@ -136,7 +130,7 @@
         sessionStorage.removeItem(PERSISTENT_ACCESS_PENDING_KEY);
       }
     } catch {
-      // noop: sessionStorage may be blocked in private/browser-limited contexts
+      /* noop */
     }
   }
 
@@ -151,10 +145,11 @@
   async function initialize() {
     loading = true;
     try {
-      const loaded = await api.loadSettings();
+      const [loaded] = await Promise.all([
+        api.loadSettings(),
+        refreshDbAccessSupport(),
+      ]);
       settings = { ...settings, ...(loaded || {}) };
-
-      await refreshDbAccessSupport();
 
       if (settings.dbPath?.trim()) {
         updateDropZoneStatus(`Loaded: ${settings.dbPath} — drag & drop encounters.db here to replace`, true, false);
@@ -189,54 +184,12 @@
     }
   }
 
-  async function saveSettings() {
-    settings.autoRaidUpdateMinutes = 0;
-    await api.saveSettings(settings);
-    emitSettingsChanged();
-    showToast('Settings saved successfully.', TOAST_TYPES.SUCCESS);
-    await refreshDatabaseStatus();
-    requestModalClose();
-  }
-
   function openDbGuide() {
     dbGuideOpen = true;
   }
 
   function closeDbGuide() {
     dbGuideOpen = false;
-  }
-
-  function requestModalClose() {
-    if (onRequestClose) {
-      onRequestClose();
-      return;
-    }
-    window.dispatchEvent(new CustomEvent('wtl-close-modal'));
-  }
-
-  function openConfirmDialog(options: {
-    action: Exclude<ConfirmAction, null>;
-    title: string;
-    message: string;
-    requireText?: string;
-  }) {
-    confirmAction = options.action;
-    confirmTitle = options.title;
-    confirmMessage = options.message;
-    confirmRequireText = options.requireText || '';
-    confirmInput = '';
-    confirmBusy = false;
-    confirmOpen = true;
-  }
-
-  function closeConfirmDialog() {
-    confirmOpen = false;
-    confirmAction = null;
-    confirmTitle = '';
-    confirmMessage = '';
-    confirmRequireText = '';
-    confirmInput = '';
-    confirmBusy = false;
   }
 
   async function persistLoadedDatabaseName(loadedName: string) {
@@ -331,10 +284,7 @@
     }, {
       code: ERROR_CODES.DB.READ_FAILED,
       severity: 'error',
-      context: {
-        phase: 'handleDrop',
-        action: 'import-db-drop',
-      },
+      context: { phase: 'SettingsDatabaseSection.handleDrop', action: 'import-db-drop' },
       showToast: true,
     });
 
@@ -394,159 +344,57 @@
       toastMessage: 'Database reloaded.',
     });
   }
-
-  function resetAppData() {
-    openConfirmDialog({
-      action: 'reset-app',
-      title: 'Reset all app data?',
-      message: 'This will erase local roster and settings data in this browser and reload the page.',
-      requireText: 'RESET',
-    });
-  }
-
-  async function executeResetAppData() {
-    await api.resetAppData?.();
-    showToast('App data reset. Reloading…', TOAST_TYPES.SUCCESS);
-    window.setTimeout(() => window.location.reload(), 180);
-  }
-
-  async function confirmActionExecute() {
-    if (!confirmAction || !confirmMatches || confirmBusy) {
-      return;
-    }
-
-    confirmBusy = true;
-    const actionResult = await withAsyncError(async () => {
-      if (confirmAction === 'reset-app') {
-        await executeResetAppData();
-      }
-      closeConfirmDialog();
-      return true;
-    }, {
-      code: ERROR_CODES.UI.ACTION_FAILED,
-      severity: 'error',
-      context: {
-        phase: 'confirmActionExecute',
-        action: confirmAction,
-        source: 'settings-confirm-dialog',
-      },
-      showToast: true,
-    });
-
-    if (actionResult === null) {
-      confirmBusy = false;
-    }
-  }
 </script>
 
-<section id="settings-tab">
-  <div class="settings-header settings-header--professional">
-    <h1 id="settings-title">Settings</h1>
-    <p class="settings-compact-hint">Control database connectivity, data safety and update behavior.</p>
+<SettingsHeader title="Database Import" hint="Load encounters.db and manage the browser's file access permission." />
+
+<div class="settings-section settings-section--db">
+  <h3>Database</h3>
+  <button id="open-db-guide-btn" class="db-guide-btn" type="button" on:click={openDbGuide}>How to find encounters.db?</button>
+  <div
+    id="db-drop-zone"
+    class={`db-drop-zone ${dropSuccess ? 'success' : ''} ${dropError ? 'error' : ''} ${dropZoneDragover ? 'dragover' : ''}`}
+    role="region"
+    on:dragover|preventDefault
+    on:dragenter={handleDropZoneDragEnter}
+    on:dragleave={handleDropZoneDragLeave}
+    on:drop={handleDrop}
+    aria-label="Drop encounters.db here"
+  >
+    {dropZoneMessage}
   </div>
 
-  <div class="settings-section settings-section--db">
-    <h3>Database</h3>
-    <button id="open-db-guide-btn" class="db-guide-btn" type="button" on:click={openDbGuide}>How to find encounters.db?</button>
-    <div
-      id="db-drop-zone"
-      class={`db-drop-zone ${dropSuccess ? 'success' : ''} ${dropError ? 'error' : ''} ${dropZoneDragover ? 'dragover' : ''}`}
-      role="region"
-      on:dragover|preventDefault
-      on:dragenter={handleDropZoneDragEnter}
-      on:dragleave={handleDropZoneDragLeave}
-      on:drop={handleDrop}
-      aria-label="Drop encounters.db here"
-    >
-      {dropZoneMessage}
-    </div>
-
-    <div id="db-copy-progress" class="db-copy-progress" style="display:none;">
-      <div id="db-copy-progress-bar" class="db-copy-progress__bar" style="width:0%"></div>
-      <span id="db-copy-progress-label" class="db-copy-progress__label">Copying… 0%</span>
-    </div>
-
-    <div class="db-status-list" aria-label="Database status">
-      <div class="db-status-row">
-        <span class="db-status-label">Loaded file</span>
-        <span id="db-loaded-file-status" class="db-status-value">{dbLoadedFile}</span>
-      </div>
-      <div class="db-status-row">
-        <span class="db-status-label">Permission status</span>
-        <span id="db-permission-status" class={`db-status-value db-permission-status ${permissionToneClass}`}>{dbPermission}</span>
-      </div>
-      <div class="db-status-row">
-        <span class="db-status-label">Last loaded</span>
-        <span id="db-last-loaded-status" class="db-status-value">{dbLastLoaded}</span>
-      </div>
-    </div>
-
-    <div class="db-action-buttons">
-      <button id="grant-db-persistent-access-btn" type="button" class:grant-persistent-access-highlight={showGrantPersistentAccessHighlight} on:click={requestPersistentAccess} disabled={loading || !persistentAccessSupported}>Grant persistent access</button>
-      <button id="reload-db-now-btn" type="button" on:click={reloadDbNow} disabled={loading}>Reload database now</button>
-      <button id="reload-page-now-btn" type="button" class:reload-page-now-highlight={showReloadPageHighlight} on:click={reloadPageNow} disabled={loading}>Reload page now</button>
-    </div>
-
-    {#if persistentAccessSupported}
-      <p class="db-permission-help">Tip: after the first load, click <strong>Reload page now</strong>. If permission is still blocked after reload, click <strong>Grant persistent access</strong> and accept the browser prompt.</p>
-    {:else}
-      <p class="db-permission-help">{browserName} does not support persistent file handles in this flow. Load <strong>encounters.db</strong> again whenever a new session starts. For the best experience, please use <strong>Chrome</strong>, <strong>Edge</strong>, or <strong>Opera</strong>.</p>
-    {/if}
+  <div id="db-copy-progress" class="db-copy-progress" style="display:none;">
+    <div id="db-copy-progress-bar" class="db-copy-progress__bar" style="width:0%"></div>
+    <span id="db-copy-progress-label" class="db-copy-progress__label">Copying… 0%</span>
   </div>
 
-  <div class="settings-bottom-grid">
-    <div class="settings-section">
-      <h3>Auto raid refresh</h3>
-      <p class="settings-compact-hint">When enabled, raid data refreshes whenever the app regains focus.</p>
-      <label class="settings-auto-raid-toggle" for="auto-raid-on-focus">
-        <input id="auto-raid-on-focus" type="checkbox" bind:checked={settings.autoRaidUpdateOnFocus} aria-label="Auto update on focus when database is loaded" />
-      </label>
+  <div class="db-status-list" aria-label="Database status">
+    <div class="db-status-row">
+      <span class="db-status-label">Loaded file</span>
+      <span id="db-loaded-file-status" class="db-status-value">{dbLoadedFile}</span>
     </div>
-
-    <div class="settings-section settings-danger-zone">
-      <h3>App data</h3>
-      <p class="settings-danger-copy">Removes saved roster and settings data from this browser.</p>
-      <button id="reset-app-data-btn" type="button" class="danger-action-btn" on:click={resetAppData} disabled={loading}>Reset app data</button>
+    <div class="db-status-row">
+      <span class="db-status-label">Permission status</span>
+      <span id="db-permission-status" class={`db-status-value db-permission-status ${permissionToneClass}`}>{dbPermission}</span>
+    </div>
+    <div class="db-status-row">
+      <span class="db-status-label">Last loaded</span>
+      <span id="db-last-loaded-status" class="db-status-value">{dbLastLoaded}</span>
     </div>
   </div>
 
-  <div class="modal-buttons">
-    <button id="save-settings" type="button" on:click={saveSettings} disabled={loading}>Save settings</button>
-    <button id="cancel-settings" type="button" on:click={requestModalClose}>Cancel</button>
+  <div class="db-action-buttons">
+    <button id="grant-db-persistent-access-btn" type="button" class:grant-persistent-access-highlight={showGrantPersistentAccessHighlight} on:click={requestPersistentAccess} disabled={loading || !persistentAccessSupported}>Grant persistent access</button>
+    <button id="reload-db-now-btn" type="button" on:click={reloadDbNow} disabled={loading}>Reload database now</button>
+    <button id="reload-page-now-btn" type="button" class:reload-page-now-highlight={showReloadPageHighlight} on:click={reloadPageNow} disabled={loading}>Reload page now</button>
   </div>
 
-  <DbGuideModal open={dbGuideOpen} on:close={closeDbGuide} />
-
-  {#if confirmOpen}
-    <div class="settings-confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-confirm-title">
-      <div class="settings-confirm-card">
-        <h3 id="settings-confirm-title">{confirmTitle}</h3>
-        <p>{confirmMessage}</p>
-
-        {#if confirmRequireText}
-          <label for="settings-confirm-input">Type <strong>{confirmRequireText}</strong> to continue</label>
-          <input
-            id="settings-confirm-input"
-            type="text"
-            bind:value={confirmInput}
-            placeholder={confirmRequireText}
-            autocomplete="off"
-            spellcheck="false"
-          />
-        {/if}
-
-        <div class="settings-confirm-actions">
-          <button type="button" on:click={closeConfirmDialog} disabled={confirmBusy}>Cancel</button>
-          <button
-            type="button"
-            class="danger-action-btn"
-            on:click={confirmActionExecute}
-            disabled={confirmBusy || !confirmMatches}
-          >
-            {confirmBusy ? 'Processing…' : 'Confirm'}
-          </button>
-        </div>
-      </div>
-    </div>
+  {#if persistentAccessSupported}
+    <p class="db-permission-help">Tip: after the first load, click <strong>Reload page now</strong>. If permission is still blocked after reload, click <strong>Grant persistent access</strong> and accept the browser prompt.</p>
+  {:else}
+    <p class="db-permission-help">{browserName} does not support persistent file handles in this flow. Load <strong>encounters.db</strong> again whenever a new session starts. For the best experience, please use <strong>Chrome</strong>, <strong>Edge</strong>, or <strong>Opera</strong>.</p>
   {/if}
-</section>
+</div>
+
+<DbGuideModal open={dbGuideOpen} on:close={closeDbGuide} />

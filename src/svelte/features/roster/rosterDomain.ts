@@ -9,6 +9,42 @@ export type RosterEntry = {
   data: RosterCharacter;
 };
 
+export const BIBLE_VALID_CLASSES: ReadonlySet<string> = new Set([
+  'Slayer', 'Valkyrie', 'Berserker', 'Destroyer', 'Gunlancer', 'Paladin', 'Guardian Knight',
+  'Glaivier', 'Scrapper', 'Soulfist', 'Wardancer', 'Breaker', 'Striker',
+  'Gunslinger', 'Artillerist', 'Deadeye', 'Machinist', 'Sharpshooter',
+  'Arcanist', 'Bard', 'Sorceress', 'Summoner',
+  'Deathblade', 'Reaper', 'Shadowhunter', 'Souleater',
+  'Aeromancer', 'Artist', 'Wildsoul',
+]);
+
+export const BIBLE_FALLBACK_CLASS = 'Berserker';
+export const BIBLE_FALLBACK_ILVL = 1500;
+
+/** Normalizes a class string coming from the Bible API. Unknown values
+ * fall back to {@link BIBLE_FALLBACK_CLASS}. */
+export function normalizeBibleClass(value: unknown): string {
+  const safe = String(value ?? '').trim();
+  if (BIBLE_VALID_CLASSES.has(safe)) return safe;
+  return BIBLE_FALLBACK_CLASS;
+}
+
+export function normalizeBibleIlvl(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : BIBLE_FALLBACK_ILVL;
+}
+
+/** CP can arrive as a number, a `{ score }` object, or be missing. */
+export function normalizeBibleCombatPower(value: unknown): number | null {
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const candidate = Number(record.score ?? record.value ?? 0);
+    return Number.isFinite(candidate) && candidate > 0 ? candidate : null;
+  }
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function isCharacterKey(name: string): boolean {
   return !META_KEYS.has(name);
 }

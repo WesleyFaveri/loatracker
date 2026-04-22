@@ -29,6 +29,7 @@
     type SortType,
   } from './rosterDomain';
   import { notifyRosterChanged, rosterChangeVersion } from '../../stores/rosterSync';
+  import BulkBibleImportModal from './BulkBibleImportModal.svelte';
 
   const api: AppApi = window.api;
   const ui = new UIHelper();
@@ -68,11 +69,27 @@
 
   const REFRESH_COOLDOWN_MS = 60_000;
   const DEFAULT_MATHI_REGION: BibleRegion = 'NA';
+  const LAST_REFRESH_STORAGE_PREFIX = 'wtl:roster:last-refresh-at:';
+  const RELATIVE_TIME_TICK_MS = 30_000;
+
+  let bulkImportModalOpen = false;
+  let lastRefreshAt: number | null = null;
+  let relativeTimeTick = Date.now();
+  let relativeTimeInterval: ReturnType<typeof setInterval> | null = null;
+  let activeRosterName = '';
+
+  const SORT_LABELS: Record<SortType, string> = {
+    manual: 'Manual',
+    ilvl: 'Item Level',
+    combatPower: 'Combat Power',
+  };
 
   $: characters = orderedEntries(roster, order);
   $: isEditing = Boolean(editingName);
   $: totalCharacters = characters.length;
   $: visibleCharacters = characters.filter((entry) => entry.data.visible !== false).length;
+  $: hiddenCharacters = Math.max(0, totalCharacters - visibleCharacters);
+  $: refreshRelativeLabel = formatRelativeTime(lastRefreshAt, relativeTimeTick);
 
   onMount(async () => {
     await window.__API_READY__;
@@ -89,6 +106,20 @@
     });
   });
 
+  // Only tick the relative-time clock while a refresh timestamp exists —
+  // avoids 30s wake-ups on empty rosters with nothing to label.
+  $: syncRelativeTimeInterval(lastRefreshAt);
+  function syncRelativeTimeInterval(current: number | null) {
+    if (current && !relativeTimeInterval) {
+      relativeTimeInterval = setInterval(() => {
+        relativeTimeTick = Date.now();
+      }, RELATIVE_TIME_TICK_MS);
+    } else if (!current && relativeTimeInterval) {
+      clearInterval(relativeTimeInterval);
+      relativeTimeInterval = null;
+    }
+  }
+
   onDestroy(() => {
     document.removeEventListener('click', handleDocumentClick);
     unsubscribeRosterChanges?.();
@@ -96,6 +127,10 @@
     if (refreshCooldownTimer) {
       clearInterval(refreshCooldownTimer);
       refreshCooldownTimer = null;
+    }
+    if (relativeTimeInterval) {
+      clearInterval(relativeTimeInterval);
+      relativeTimeInterval = null;
     }
   });
 
@@ -134,29 +169,93 @@
     loading = true;
     try {
       const seedRosterId = forceResolveActiveRoster ? '' : activeRosterId;
-      const state = await withAsyncError(
-        () => loadRosterState(api, seedRosterId),
-        {
-        code: ERROR_CODES.STATE.LOAD_FAILED,
-        severity: 'error',
-        context: {
-          phase: 'loadRosterData',
-          action: 'load-roster-data',
-          rosterId: activeRosterId,
-          forceResolveActiveRoster,
-        },
-        showToast: true,
-        }
-      );
+      // Fetch roster state and the meta list in parallel — they are
+      // independent reads, and the meta list is only used to resolve the
+      // active roster's display name.
+      const [state, metas] = await Promise.all([
+        withAsyncError(
+          () => loadRosterState(api, seedRosterId),
+          {
+            code: ERROR_CODES.STATE.LOAD_FAILED,
+            severity: 'error',
+            context: {
+              phase: 'loadRosterData',
+              action: 'load-roster-data',
+              rosterId: activeRosterId,
+              forceResolveActiveRoster,
+            },
+            showToast: true,
+          },
+        ),
+        api.getRosterList ? api.getRosterList().catch(() => null) : Promise.resolve(null),
+      ]);
 
       if (state) {
         activeRosterId = state.activeRosterId;
         roster = state.roster;
         order = state.order;
+        lastRefreshAt = readLastRefreshAt(activeRosterId);
+        applyActiveRosterName(metas, state.activeRosterId);
       }
     } finally {
       loading = false;
     }
+  }
+
+  function applyActiveRosterName(metas: unknown, rosterIdHint: string) {
+    if (!rosterIdHint || !Array.isArray(metas)) {
+      activeRosterName = '';
+      return;
+    }
+    const match = metas.find((entry) => (entry as { id?: string })?.id === rosterIdHint) as
+      | { name?: string }
+      | undefined;
+    activeRosterName = match?.name?.trim() || '';
+  }
+
+  function readLastRefreshAt(rosterKey: string): number | null {
+    if (!rosterKey) return null;
+    try {
+      const raw = localStorage.getItem(`${LAST_REFRESH_STORAGE_PREFIX}${rosterKey}`);
+      if (!raw) return null;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeLastRefreshAt(rosterKey: string, timestamp: number) {
+    if (!rosterKey) return;
+    try {
+      localStorage.setItem(`${LAST_REFRESH_STORAGE_PREFIX}${rosterKey}`, String(timestamp));
+    } catch {
+      /* noop */
+    }
+  }
+
+  /**
+   * Humanized "time since" label used next to the Refresh button. Resolution
+   * caps at minutes because the cooldown alone is 60s — anything sub-minute is
+   * rendered as "just now" to avoid ticking numbers next to a cooldown badge.
+   */
+  function formatRelativeTime(timestamp: number | null, now: number): string {
+    if (!timestamp) return '';
+    const diffMs = Math.max(0, now - timestamp);
+    const seconds = Math.round(diffMs / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.round(hours / 24);
+    return `${days}d ago`;
+  }
+
+  function markRosterRefreshed() {
+    const now = Date.now();
+    lastRefreshAt = now;
+    writeLastRefreshAt(activeRosterId, now);
   }
 
   function resetForm() {
@@ -406,6 +505,7 @@
 
       const next = applyRefreshToExisting(roster, apiCharacters);
       await persistRoster(next.roster, [...order]);
+      markRosterRefreshed();
       showToast(`Successfully refreshed ${next.updatedCount} character${next.updatedCount !== 1 ? 's' : ''} from Bible API!`, TOAST_TYPES.SUCCESS);
       return true;
     }, {
@@ -611,6 +711,23 @@
     await persistRoster(nextRoster, [...order]);
   }
 
+  function openBulkImportModal() {
+    if (loading) return;
+    bulkImportModalOpen = true;
+    sortDropdownOpen = false;
+  }
+
+  function closeBulkImportModal() {
+    bulkImportModalOpen = false;
+  }
+
+  function onBulkImportDone() {
+    // Bible returned the authoritative roster; treat as a refresh so the
+    // timestamp next to the Refresh button reflects the bulk import too.
+    markRosterRefreshed();
+    void loadRosterData(true);
+  }
+
   async function applySortChoice(nextSort: SortType) {
     sortType = nextSort;
     sortDropdownOpen = false;
@@ -627,88 +744,129 @@
   <div class="roster-header">
     <div class="roster-heading-group">
       <h1>Roster Management</h1>
-      <p class="roster-subtitle">Manage classes, priority and visibility for your weekly planning.</p>
+      <p class="roster-subtitle">
+        {#if activeRosterName}
+          <span class="roster-active-name">{activeRosterName}</span>
+          <span class="roster-subtitle-divider" aria-hidden="true"> — </span>
+        {/if}
+        <span class="roster-stats-inline" aria-live="polite">
+          <strong>{totalCharacters}</strong> character{totalCharacters === 1 ? '' : 's'}
+          · <strong>{visibleCharacters}</strong> visible
+          · <strong>{hiddenCharacters}</strong> hidden
+        </span>
+      </p>
     </div>
-  </div>
 
-  <div class="roster-summary" aria-live="polite">
-    <span class="roster-summary-chip">Total: {totalCharacters}</span>
-    <span class="roster-summary-chip">Visible: {visibleCharacters}</span>
-    <span class="roster-summary-chip">Hidden: {Math.max(0, totalCharacters - visibleCharacters)}</span>
-  </div>
+    <div class="roster-header-actions">
+      <div
+        id="sort-roster-btn"
+        class="sort-roster-btn roster-sort-trigger"
+        class:active={sortDropdownOpen}
+        title="Sort roster"
+        aria-label={`Sort roster (currently ${SORT_LABELS[sortType]})`}
+        aria-haspopup="menu"
+        aria-expanded={sortDropdownOpen}
+        role="button"
+        tabindex="0"
+        bind:this={sortButtonRef}
+        on:click={toggleSortDropdown}
+        on:keydown={toggleSortDropdownFromKeyboard}
+      >
+        <span class="roster-sort-label">Sort: <strong>{SORT_LABELS[sortType]}</strong></span>
+        <span class="roster-sort-caret" aria-hidden="true">▾</span>
 
-  <div class="roster-controls">
-    <div
-      id="sort-roster-btn"
-      class="sort-roster-btn"
-      class:active={sortDropdownOpen}
-      title="Sort roster"
-      aria-label="Sort roster"
-      role="button"
-      tabindex="0"
-      bind:this={sortButtonRef}
-      on:click={toggleSortDropdown}
-      on:keydown={toggleSortDropdownFromKeyboard}
-    >
-      <span class="sort-btn-text">{getSortButtonText()}</span>
-
-      <div class="sort-dropdown" class:visible={sortDropdownOpen}>
-        <button type="button" class:selected={sortType === 'manual'} on:click|stopPropagation={() => applySortChoice('manual')}>Manual Order</button>
-        <button type="button" class:selected={sortType === 'ilvl'} on:click|stopPropagation={() => applySortChoice('ilvl')}>Item Level ↓</button>
-        <button type="button" class:selected={sortType === 'combatPower'} on:click|stopPropagation={() => applySortChoice('combatPower')}>Combat Power ↓</button>
+        <div class="sort-dropdown" class:visible={sortDropdownOpen} role="menu">
+          <button type="button" class:selected={sortType === 'manual'} on:click|stopPropagation={() => applySortChoice('manual')}>Manual Order</button>
+          <button type="button" class:selected={sortType === 'ilvl'} on:click|stopPropagation={() => applySortChoice('ilvl')}>Item Level ↓</button>
+          <button type="button" class:selected={sortType === 'combatPower'} on:click|stopPropagation={() => applySortChoice('combatPower')}>Combat Power ↓</button>
+        </div>
       </div>
-    </div>
 
-    <div class="add-character-source-group" role="group" aria-label="Add character source">
+      <button
+        id="refresh-roster-btn"
+        class="roster-refresh-btn"
+        class:cooldown-active={refreshCooldownRemaining > 0}
+        title={refreshCooldownRemaining > 0
+          ? `Please wait ${refreshCooldownRemaining}s before refreshing again`
+          : 'Refresh roster from Bible API'}
+        aria-label="Refresh roster from Bible API"
+        type="button"
+        disabled={loading || refreshCooldownRemaining > 0}
+        on:click={handleRefreshRoster}
+      >
+        <svg class="roster-refresh-icon" width="16" height="16" viewBox="-0.45 0 60.369 60.369" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <g transform="translate(-446.571 -211.615)">
+            <path d="M504.547,265.443h-9.019a30.964,30.964,0,0,0-29.042-52.733,1.5,1.5,0,1,0,.792,2.894,27.955,27.955,0,0,1,25.512,48.253l0-10.169h-.011a1.493,1.493,0,0,0-2.985,0h0v13.255a1.5,1.5,0,0,0,1.5,1.5h13.256a1.5,1.5,0,1,0,0-3Z" fill="currentColor"/>
+            <path d="M485.389,267.995a27.956,27.956,0,0,1-25.561-48.213l0,10.2h.015a1.491,1.491,0,0,0,2.978,0h.007V216.791a1.484,1.484,0,0,0-1.189-1.532l-.018-.005a1.533,1.533,0,0,0-.223-.022c-.024,0-.046-.007-.07-.007H448.071a1.5,1.5,0,0,0,0,3h8.995a30.963,30.963,0,0,0,29.115,52.664,1.5,1.5,0,0,0-.792-2.894Z" fill="currentColor"/>
+          </g>
+        </svg>
+        <span class="btn-label">
+          {#if refreshCooldownRemaining > 0}
+            Wait {refreshCooldownRemaining}s
+          {:else}
+            Refresh{#if refreshRelativeLabel}<span class="roster-refresh-subtle"> · updated {refreshRelativeLabel}</span>{/if}
+          {/if}
+        </span>
+      </button>
+    </div>
+  </div>
+
+  {#if characters.length > 0}
+    <div class="roster-controls">
       <span class="add-character-source-title">Add Character</span>
-      <div class="add-character-source-actions">
-        <button
-          id="open-add-char-btn"
-          class="sort-roster-btn"
-          type="button"
-          title="Add character manually"
-          aria-label="Add character manually"
-          on:click={openCharacterFormForCreate}
-        >
-          <span class="btn-label">Manual</span>
-        </button>
 
-        <button
-          id="import-mathi-btn"
-          class="sort-roster-btn"
-          title="Find character on Bible API"
-          aria-label="Find character on Bible API"
-          type="button"
-          on:click={openBibleCharacterModal}
-        >
-          <img class="btn-icon-image" src="./assets/icons/items/bibleicon.png" alt="" aria-hidden="true" draggable="false" />
-          <span class="btn-label">Bible</span>
-        </button>
-      </div>
+      <button
+        id="open-add-char-btn"
+        class="sort-roster-btn roster-add-btn"
+        type="button"
+        title="Add character manually"
+        aria-label="Add character manually"
+        on:click={openCharacterFormForCreate}
+      >
+        <span class="btn-label">Manual</span>
+      </button>
+
+      <button
+        id="import-mathi-btn"
+        class="sort-roster-btn roster-add-btn"
+        title="Find a single character on Bible API"
+        aria-label="Find a single character on Bible API"
+        type="button"
+        on:click={openBibleCharacterModal}
+      >
+        <img class="btn-icon-image" src="./assets/icons/items/bibleicon.png" alt="" aria-hidden="true" draggable="false" />
+        <span class="btn-label">Single from Bible</span>
+      </button>
+
+      <button
+        id="bulk-import-btn"
+        class="sort-roster-btn roster-add-btn roster-add-btn--primary"
+        title="Import an entire roster from Bible API (bulk)"
+        aria-label="Import an entire roster from Bible API"
+        type="button"
+        on:click={openBulkImportModal}
+      >
+        <img class="btn-icon-image" src="./assets/icons/items/bibleicon.png" alt="" aria-hidden="true" draggable="false" />
+        <span class="btn-label">Full roster from Bible</span>
+      </button>
     </div>
-
-    <button
-      id="refresh-roster-btn"
-      class={`sort-roster-btn ${refreshCooldownRemaining > 0 ? 'cooldown-active' : ''}`}
-      title="Refresh roster from Bible API"
-      aria-label="Refresh roster from Bible API"
-      type="button"
-      disabled={loading || refreshCooldownRemaining > 0}
-      on:click={handleRefreshRoster}
-    >
-      <svg width="16" height="16" viewBox="-0.45 0 60.369 60.369" xmlns="http://www.w3.org/2000/svg">
-        <g transform="translate(-446.571 -211.615)">
-          <path d="M504.547,265.443h-9.019a30.964,30.964,0,0,0-29.042-52.733,1.5,1.5,0,1,0,.792,2.894,27.955,27.955,0,0,1,25.512,48.253l0-10.169h-.011a1.493,1.493,0,0,0-2.985,0h0v13.255a1.5,1.5,0,0,0,1.5,1.5h13.256a1.5,1.5,0,1,0,0-3Z" fill="currentColor"/>
-          <path d="M485.389,267.995a27.956,27.956,0,0,1-25.561-48.213l0,10.2h.015a1.491,1.491,0,0,0,2.978,0h.007V216.791a1.484,1.484,0,0,0-1.189-1.532l-.018-.005a1.533,1.533,0,0,0-.223-.022c-.024,0-.046-.007-.07-.007H448.071a1.5,1.5,0,0,0,0,3h8.995a30.963,30.963,0,0,0,29.115,52.664,1.5,1.5,0,0,0-.792-2.894Z" fill="currentColor"/>
-        </g>
-      </svg>
-      <span class="btn-label">{refreshCooldownRemaining > 0 ? `Wait ${refreshCooldownRemaining}s` : 'Refresh'}</span>
-    </button>
-  </div>
+  {/if}
 
   <div id="roster-list" class:drag-active={dragActive}>
     {#if characters.length === 0}
-      <p class="friends-empty roster-empty">No characters in roster.</p>
+      <div class="roster-empty-cta" role="region" aria-labelledby="roster-empty-title">
+        <h2 id="roster-empty-title">No characters yet</h2>
+        <p>Import your roster from the Bible API to get started, or add characters manually.</p>
+        <div class="roster-empty-cta-actions">
+          <button type="button" class="roster-empty-primary" on:click={openBulkImportModal}>
+            <img src="./assets/icons/items/bibleicon.png" alt="" aria-hidden="true" draggable="false" />
+            <span>Import roster from Bible</span>
+          </button>
+          <button type="button" class="roster-empty-secondary" on:click={openCharacterFormForCreate}>
+            Add manually
+          </button>
+        </div>
+      </div>
     {/if}
 
     {#each characters as character (character.name)}
@@ -870,4 +1028,13 @@
       </div>
     </div>
   {/if}
+
+  <BulkBibleImportModal
+    open={bulkImportModalOpen}
+    rosterId={activeRosterId}
+    {roster}
+    {order}
+    onClose={closeBulkImportModal}
+    onImported={onBulkImportDone}
+  />
 </section>

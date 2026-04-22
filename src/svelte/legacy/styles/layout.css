@@ -6,9 +6,7 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: var(--spacing-md);
-    max-width: 1200px;
-    margin-left: auto;
-    margin-right: auto;
+    width: 100%;
     gap: var(--spacing-md);
     flex-wrap: wrap;
     position: relative;
@@ -17,10 +15,13 @@
 }
 
 .support-donate-wrapper {
-    position: absolute;
-    top: var(--spacing-xl);
-    left: var(--spacing-xl);
-    z-index: 1600;
+    position: fixed;
+    top: auto;
+    bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom, 0px));
+    left: auto;
+    right: var(--spacing-md);
+    transform: none;
+    z-index: 1800;
     display: inline-block;
 }
 
@@ -29,7 +30,6 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    width: 100%;
     min-height: 36px;
     padding: 6px 12px;
     border: 1px solid var(--color-primary);
@@ -40,8 +40,14 @@
     font-size: 13px;
     font-weight: 700;
     transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
     white-space: nowrap;
+}
+
+.support-kofi-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 .support-donate-toggle:hover {
@@ -56,9 +62,12 @@
 
 .support-donate-menu {
     position: absolute;
-    left: 0;
-    top: calc(100% + 8px);
-    width: 224px;
+    top: auto;
+    bottom: calc(100% + 8px);
+    left: auto;
+    right: 0;
+    transform: none;
+    width: min(88vw, 224px);
     padding: 8px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -97,72 +106,11 @@
     line-height: 1.2;
 }
 
-.support-kofi-icon {
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-
 .support-external-icon {
     width: 14px;
     height: 14px;
     color: var(--color-text-muted);
     flex-shrink: 0;
-}
-
-@media (max-width: 900px) {
-    .support-donate-wrapper {
-        top: var(--spacing-md);
-        left: var(--spacing-md);
-    }
-
-    .support-donate-toggle {
-        min-height: 34px;
-        padding: 6px 10px;
-    }
-
-    .support-donate-menu {
-        width: 210px;
-    }
-}
-
-@media (max-width: 1630px) {
-    .support-donate-wrapper {
-        position: fixed;
-        top: auto;
-        bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom, 0px));
-        left: auto;
-        right: var(--spacing-md);
-        transform: none;
-        z-index: 1800;
-    }
-
-    .support-donate-toggle {
-        width: 44px;
-        height: 44px;
-        min-height: 44px;
-        padding: 0;
-        gap: 0;
-        border-radius: var(--radius-full);
-    }
-
-    .support-donate-toggle span {
-        display: none;
-    }
-
-    .support-kofi-icon {
-        width: 22px;
-        height: 22px;
-    }
-
-    .support-donate-menu {
-        top: auto;
-        bottom: calc(100% + 8px);
-        left: auto;
-        right: 0;
-        transform: none;
-        width: min(88vw, 220px);
-    }
 }
 
 .header-icon-btn {
@@ -181,6 +129,44 @@
     align-items: center;
     justify-content: center;
     font-weight: bold;
+}
+
+.header-text-btn {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    padding: 0 var(--spacing-lg);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-sm);
+    font-weight: bold;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    height: 40px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.header-text-btn:hover {
+    background-color: var(--color-surface-hover);
+    transform: translateY(-1px);
+}
+
+.header-text-btn:active {
+    transform: scale(1);
+}
+
+.header-text-btn.active {
+    background-color: var(--color-primary);
+    color: var(--color-bg-dark);
+    border-color: var(--color-primary);
+}
+
+.header-text-btn.active:hover {
+    background-color: var(--color-primary);
 }
 
 .header-icon-btn:hover,
@@ -233,7 +219,7 @@
 }
 
 .tab-button.icon-tab {
-    padding: var(--spacing-md);
+    padding: 0 var(--spacing-md);
     min-width: 40px;
     display: inline-flex;
     align-items: center;
@@ -244,13 +230,18 @@
     background-color: var(--color-surface);
     color: var(--color-text);
     border: 1px solid var(--color-border);
-    padding: var(--spacing-md) var(--spacing-xl);
+    padding: 0 var(--spacing-xl);
     cursor: pointer;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     font-weight: bold;
     font-size: var(--font-sm);
     white-space: nowrap;
     transition: all var(--transition-fast);
+    height: 40px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .tab-button:hover {
@@ -261,29 +252,6 @@
     background-color: var(--color-primary);
     color: var(--color-bg-dark);
     border-color: var(--color-primary);
-}
-
-.header-help-btn {
-    background-color: var(--color-surface);
-    color: var(--color-text);
-    border: 1px solid var(--color-border);
-    padding: var(--spacing-md) var(--spacing-lg);
-    cursor: pointer;
-    border-radius: var(--radius-sm);
-    font-weight: bold;
-    font-size: var(--font-md);
-    white-space: nowrap;
-    transition: all var(--transition-fast);
-    min-height: 46px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.header-help-btn:hover {
-    background-color: var(--color-surface-hover);
-    border-color: var(--color-border-light);
-    transform: scale(1.05);
 }
 
 .settings-btn {

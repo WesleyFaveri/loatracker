@@ -20,6 +20,9 @@
   import { normalizeFriendsConfig } from '../friends/config';
   import type { FriendsRosterConfig } from '../friends/types';
   import { runAutoRaidFocusUpdate } from '../../services/AutoRaidFocusUpdateService';
+  import { BibleApiRequestError, BibleApiService } from '../../services/BibleApiService';
+  import { applyRefreshToExisting } from '../roster/rosterDomain';
+  import { withAsyncError } from '../../utils/errorWrappers';
   import {
     loadColumns,
     loadValues,
@@ -100,6 +103,12 @@
 
   const DOUBLE_CHEST_RAID_IDS = new Set(['aegir', 'brel', 'mordum', 'armoche']);
 
+  // Bible API refresh shared between the Weekly Tracker per-roster Refresh
+  // button and the one living in Roster Management — same 1 minute cooldown
+  // so users can't hammer the endpoint from either surface.
+  const WEEKLY_REFRESH_COOLDOWN_MS = 60_000;
+  const WEEKLY_REFRESH_REGION = 'NA' as const;
+
   let loading = false;
   let activeRosterId = '';
   let roster: Record<string, RosterCharacter | unknown> = {};
@@ -158,6 +167,15 @@
   let editingWidthColId: string | null = null;
   let editingWidthRosterId: string | null = null;
   let editingWidthDraft = 5;
+
+  // Refresh-from-Bible state, keyed by rosterId. `refreshingRosterIds` gates
+  // the spinner/label, `refreshCooldownByRoster` holds the seconds remaining
+  // for UI display; a single interval drives the countdown for every active
+  // cooldown at once.
+  let refreshingRosterIds: Record<string, boolean> = {};
+  let refreshCooldownByRoster: Record<string, number> = {};
+  let refreshCooldownEndsByRoster: Record<string, number> = {};
+  let refreshCooldownTimer: ReturnType<typeof setInterval> | null = null;
 
   $: weeklyConfirmOpen = weeklyConfirmAction !== null;
   $: weeklyConfirmTitle = weeklyConfirmAction === 'reset-weekly' ? 'Reset weekly data' : '';
@@ -226,6 +244,120 @@
     }
     await resetWeeklyForRoster(weeklyConfirmRosterId || activeRosterId);
     closeWeeklyConfirm();
+  }
+
+  function tickRefreshCooldowns() {
+    const now = Date.now();
+    const nextCooldowns: Record<string, number> = {};
+    const nextEndsBy: Record<string, number> = {};
+    let anyActive = false;
+
+    for (const [rosterId, endsAt] of Object.entries(refreshCooldownEndsByRoster)) {
+      const remainingMs = endsAt - now;
+      if (remainingMs <= 0) continue;
+      nextCooldowns[rosterId] = Math.ceil(remainingMs / 1000);
+      nextEndsBy[rosterId] = endsAt;
+      anyActive = true;
+    }
+
+    refreshCooldownByRoster = nextCooldowns;
+    refreshCooldownEndsByRoster = nextEndsBy;
+
+    if (!anyActive && refreshCooldownTimer) {
+      clearInterval(refreshCooldownTimer);
+      refreshCooldownTimer = null;
+    }
+  }
+
+  function startRefreshCooldown(rosterId: string) {
+    const endsAt = Date.now() + WEEKLY_REFRESH_COOLDOWN_MS;
+    refreshCooldownEndsByRoster = { ...refreshCooldownEndsByRoster, [rosterId]: endsAt };
+    refreshCooldownByRoster = {
+      ...refreshCooldownByRoster,
+      [rosterId]: Math.ceil(WEEKLY_REFRESH_COOLDOWN_MS / 1000),
+    };
+    if (!refreshCooldownTimer) {
+      refreshCooldownTimer = setInterval(tickRefreshCooldowns, 1000);
+    }
+  }
+
+  function setRefreshing(rosterId: string, value: boolean) {
+    if (value) {
+      refreshingRosterIds = { ...refreshingRosterIds, [rosterId]: true };
+    } else {
+      const { [rosterId]: _removed, ...rest } = refreshingRosterIds;
+      void _removed;
+      refreshingRosterIds = rest;
+    }
+  }
+
+  /**
+   * Refreshes the given roster's characters from the Bible API, mirroring the
+   * flow in Roster Management. The first character of the roster is used as
+   * the lookup seed (same as Roster Management), results are merged into the
+   * existing roster via {@link applyRefreshToExisting}, and a one-minute
+   * cooldown is started regardless of outcome to match the other entry point.
+   */
+  async function handleRefreshWeeklyRoster(rosterId: string) {
+    if (!rosterId) return;
+    if (refreshingRosterIds[rosterId]) return;
+    const remaining = refreshCooldownByRoster[rosterId] || 0;
+    if (remaining > 0) {
+      showToast(`Please wait ${remaining}s before refreshing again.`, TOAST_TYPES.WARNING);
+      return;
+    }
+
+    const card = weeklyCards.find((entry) => entry.rosterId === rosterId);
+    const firstCharacterName = card?.order?.[0] || '';
+    if (!card || !firstCharacterName) {
+      showToast('No characters to refresh. Add characters first.', TOAST_TYPES.WARNING);
+      return;
+    }
+
+    setRefreshing(rosterId, true);
+    startRefreshCooldown(rosterId);
+
+    await withAsyncError(async () => {
+      let apiCharacters: Awaited<ReturnType<typeof BibleApiService.fetchFullRoster>>;
+      try {
+        apiCharacters = await BibleApiService.fetchFullRoster(WEEKLY_REFRESH_REGION, firstCharacterName);
+      } catch (error) {
+        const isNotFound = error instanceof BibleApiRequestError
+          ? error.status === 404
+          : String(error || '').includes('HTTP 404');
+        if (isNotFound) {
+          showToast('Character not found on Bible API. Check the name and region.', TOAST_TYPES.ERROR);
+          return true;
+        }
+        throw error;
+      }
+
+      if (!Array.isArray(apiCharacters) || apiCharacters.length === 0) {
+        showToast('No characters found on Bible API', TOAST_TYPES.ERROR);
+        return true;
+      }
+
+      const next = applyRefreshToExisting(card.roster as Record<string, unknown>, apiCharacters);
+      await api.saveRoster?.(rosterId, { roster: next.roster, order: [...card.order] } as RosterPayload);
+      notifyRosterChanged();
+      showToast(
+        `Successfully refreshed ${next.updatedCount} character${next.updatedCount !== 1 ? 's' : ''} from Bible API!`,
+        TOAST_TYPES.SUCCESS,
+      );
+      return true;
+    }, {
+      code: ERROR_CODES.NETWORK.REQUEST_FAILED,
+      severity: 'error',
+      context: {
+        phase: 'handleRefreshWeeklyRoster',
+        action: 'refresh-roster-from-api',
+        rosterId,
+        region: WEEKLY_REFRESH_REGION,
+      },
+      showToast: true,
+    });
+
+    setRefreshing(rosterId, false);
   }
 
 
@@ -525,6 +657,10 @@
     if (timerInterval) {
       clearInterval(timerInterval);
       timerInterval = null;
+    }
+    if (refreshCooldownTimer) {
+      clearInterval(refreshCooldownTimer);
+      refreshCooldownTimer = null;
     }
     unsubscribeRosterChanges?.();
     unsubscribeRosterChanges = null;
@@ -2751,6 +2887,33 @@
                 title="Configure raid columns"
                 on:click={() => openColumnsConfig(card.rosterId, card.rosterName, card.hiddenColumns)}
               >⚙️</button>
+              {#if (card.order?.length ?? 0) > 0}
+              <button
+                type="button"
+                class="header-icon-btn weekly-action-btn weekly-refresh-btn"
+                class:is-refreshing={Boolean(refreshingRosterIds[card.rosterId])}
+                class:cooldown-active={(refreshCooldownByRoster[card.rosterId] || 0) > 0 && !refreshingRosterIds[card.rosterId]}
+                title={refreshingRosterIds[card.rosterId]
+                  ? 'Refreshing roster from Bible API…'
+                  : (refreshCooldownByRoster[card.rosterId] || 0) > 0
+                    ? `Please wait ${refreshCooldownByRoster[card.rosterId]}s before refreshing again`
+                    : 'Refresh roster from Bible API'}
+                aria-label="Refresh roster from Bible API"
+                aria-busy={Boolean(refreshingRosterIds[card.rosterId])}
+                on:click={() => handleRefreshWeeklyRoster(card.rosterId)}
+                disabled={loading || Boolean(refreshingRosterIds[card.rosterId]) || (refreshCooldownByRoster[card.rosterId] || 0) > 0}
+              >
+                <svg class="weekly-refresh-icon" width="18" height="18" viewBox="-0.45 0 60.369 60.369" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <g transform="translate(-446.571 -211.615)">
+                    <path d="M504.547,265.443h-9.019a30.964,30.964,0,0,0-29.042-52.733,1.5,1.5,0,1,0,.792,2.894,27.955,27.955,0,0,1,25.512,48.253l0-10.169h-.011a1.493,1.493,0,0,0-2.985,0h0v13.255a1.5,1.5,0,0,0,1.5,1.5h13.256a1.5,1.5,0,1,0,0-3Z" fill="currentColor"/>
+                    <path d="M485.389,267.995a27.956,27.956,0,0,1-25.561-48.213l0,10.2h.015a1.491,1.491,0,0,0,2.978,0h.007V216.791a1.484,1.484,0,0,0-1.189-1.532l-.018-.005a1.533,1.533,0,0,0-.223-.022c-.024,0-.046-.007-.07-.007H448.071a1.5,1.5,0,0,0,0,3h8.995a30.963,30.963,0,0,0,29.115,52.664,1.5,1.5,0,0,0-.792-2.894Z" fill="currentColor"/>
+                  </g>
+                </svg>
+                <span class="btn-label">
+                  {#if refreshingRosterIds[card.rosterId]}Refreshing{:else if (refreshCooldownByRoster[card.rosterId] || 0) > 0}Wait {refreshCooldownByRoster[card.rosterId]}s{:else}Refresh{/if}
+                </span>
+              </button>
+              {/if}
               <button type="button" class="header-icon-btn weekly-action-btn" on:click={() => loadFromDatabase({ rosterId: card.rosterId })} disabled={loading}>
                 <img src="./assets/icons/items/download.svg" alt="" aria-hidden="true" />
                 <span class="btn-label">Load Data</span>

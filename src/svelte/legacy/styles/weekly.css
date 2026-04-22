@@ -367,6 +367,52 @@
    justify-content: center;
 }
 
+/* Yellow primary refresh button, matches the Roster Management refresh CTA
+   so users recognize it across surfaces. The icon rotates while the request
+   is in flight and the button becomes non-interactive during both the
+   loading state and the post-request cooldown. */
+.weekly-actions .header-icon-btn.weekly-refresh-btn {
+   background-color: var(--color-primary);
+   color: var(--color-bg-dark);
+   border-color: var(--color-primary);
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn:hover:not(:disabled) {
+   background-color: var(--color-primary-dark);
+   border-color: var(--color-primary-dark);
+   color: var(--color-bg-dark);
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn .weekly-refresh-icon {
+   color: currentColor;
+   display: block;
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn.is-refreshing {
+   background-color: color-mix(in srgb, var(--color-primary) 55%, var(--color-surface));
+   color: var(--color-bg-dark);
+   cursor: progress;
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn.is-refreshing .weekly-refresh-icon {
+   animation: weekly-refresh-spin 0.85s linear infinite;
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn.cooldown-active {
+   background-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-surface));
+   color: var(--color-text-secondary);
+   border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+}
+
+.weekly-actions .header-icon-btn.weekly-refresh-btn:disabled {
+   cursor: not-allowed;
+}
+
+@keyframes weekly-refresh-spin {
+   from { transform: rotate(0deg); }
+   to { transform: rotate(360deg); }
+}
+
 .action-icon-btn {
    display: inline-flex;
    align-items: center;

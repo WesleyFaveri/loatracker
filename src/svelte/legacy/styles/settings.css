@@ -381,7 +381,7 @@
    padding-top: 6px;
 }
 
-#settings-modal .settings-auto-raid-toggle {
+#settings-tab .settings-auto-raid-toggle {
    display: flex;
    align-items: flex-start;
    justify-content: center;
@@ -396,7 +396,7 @@
    text-align: left;
 }
 
-#settings-modal .settings-auto-raid-toggle input[type="checkbox"] {
+#settings-tab .settings-auto-raid-toggle input[type="checkbox"] {
    flex: 0 0 auto;
    margin-top: 1px;
    width: 18px;
@@ -404,7 +404,7 @@
    accent-color: var(--color-primary);
 }
 
-#settings-modal .settings-auto-raid-toggle span {
+#settings-tab .settings-auto-raid-toggle span {
    display: block;
    flex: 1;
    min-width: 0;
@@ -864,65 +864,65 @@
 /* ===========================
    SVELTE SETTINGS POLISH
    =========================== */
-#settings-modal #settings-tab {
+#settings-tab {
    display: flex;
    flex-direction: column;
    gap: 8px;
 }
 
-#settings-modal #settings-tab .settings-header {
+#settings-tab .settings-header {
    margin-bottom: 2px;
    flex-direction: column;
    gap: 4px;
 }
 
-#settings-modal #settings-tab .settings-header .settings-compact-hint {
+#settings-tab .settings-header .settings-compact-hint {
    margin: 0;
    max-width: 320px;
    text-align: center;
 }
 
-#settings-modal #settings-tab .settings-section {
+#settings-tab .settings-section {
    border: 1px solid var(--color-border);
    border-radius: var(--radius-md);
    background: var(--color-surface-light);
    padding: 9px;
 }
 
-#settings-modal #settings-tab .settings-section h3 {
+#settings-tab .settings-section h3 {
    margin-top: 0;
    margin-bottom: 6px;
 }
 
-#settings-modal #settings-tab .db-action-buttons {
+#settings-tab .db-action-buttons {
    margin-top: 6px;
 }
 
-#settings-modal #settings-tab .db-action-buttons button {
+#settings-tab .db-action-buttons button {
    font-size: 0.82rem;
    letter-spacing: 0.1px;
 }
 
-#settings-modal #settings-tab .db-status-row {
+#settings-tab .db-status-row {
    background: var(--color-bg-dark);
 }
 
-#settings-modal #settings-tab .settings-auto-raid-toggle {
+#settings-tab .settings-auto-raid-toggle {
    margin-top: 8px;
    margin-bottom: 2px;
 }
 
-#settings-modal #settings-tab .db-permission-help {
+#settings-tab .db-permission-help {
    max-width: 340px;
    margin-left: auto;
    margin-right: auto;
 }
 
-#settings-modal #settings-tab .settings-danger-zone {
+#settings-tab .settings-danger-zone {
    border-top: 1px solid var(--color-border);
 }
 
-#settings-modal #settings-tab .modal-buttons {
+#settings-tab .modal-buttons {
    margin-top: 4px;
    padding-top: 2px;
 }
@@ -937,36 +937,44 @@
    padding: 12px;
 }
 
-#settings-modal #settings-tab {
+#settings-tab {
    gap: 9px;
    font-size: 1.26em;
 }
 
-#settings-modal #settings-tab .settings-bottom-grid {
+#settings-tab .settings-bottom-grid {
    display: grid;
    grid-template-columns: repeat(2, minmax(0, 1fr));
    gap: 7px;
 }
 
-#settings-modal #settings-tab .settings-section--db {
+#settings-tab .settings-section--db {
    margin-bottom: 0;
 }
 
-#settings-modal #settings-tab .settings-header--professional {
-   display: grid;
+#settings-tab .settings-header--professional {
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: flex-start;
    gap: 6px;
-   justify-items: center;
-   margin-bottom: 4px;
+   margin-bottom: var(--spacing-md);
+   text-align: center;
 }
 
-#settings-modal #settings-tab .settings-header--professional .settings-header-chips {
+#settings-tab .settings-header--professional h1,
+#settings-tab .settings-header--professional p {
+   margin: 0;
+}
+
+#settings-tab .settings-header--professional .settings-header-chips {
    display: flex;
    gap: 6px;
    flex-wrap: wrap;
    justify-content: center;
 }
 
-#settings-modal #settings-tab .settings-chip {
+#settings-tab .settings-chip {
    border: 1px solid color-mix(in srgb, var(--color-border-light) 60%, var(--color-border));
    background: color-mix(in srgb, var(--color-surface) 90%, var(--color-bg-dark));
    color: var(--color-text-secondary);
@@ -977,43 +985,60 @@
    letter-spacing: 0.02em;
 }
 
-#settings-modal #settings-tab .settings-chip.is-positive {
+#settings-tab .settings-chip.is-positive {
    border-color: color-mix(in srgb, var(--color-success) 44%, var(--color-border));
    color: color-mix(in srgb, var(--color-success) 82%, #fff);
 }
 
-#settings-modal #settings-tab .settings-chip.is-warning {
+#settings-tab .settings-chip.is-warning {
    border-color: color-mix(in srgb, var(--color-warning) 44%, var(--color-border));
    color: color-mix(in srgb, var(--color-warning) 82%, #fff);
 }
 
-#settings-modal #settings-tab .settings-section {
+#settings-tab .settings-section {
    border: 1px solid color-mix(in srgb, var(--color-border-light) 58%, var(--color-border));
+   border-radius: var(--radius-md);
    background: linear-gradient(180deg,
       color-mix(in srgb, var(--color-surface-light) 92%, var(--color-surface)) 0%,
       color-mix(in srgb, var(--color-surface) 88%, var(--color-bg-darker)) 100%);
    box-shadow: var(--shadow-sm);
-   padding: 8px;
+   padding: 16px;
 }
 
-#settings-modal #settings-tab .settings-section h3 {
+#settings-tab .settings-bottom-grid .settings-section {
+   text-align: center;
+}
+
+#settings-tab .settings-bottom-grid .settings-section .settings-compact-hint,
+#settings-tab .settings-bottom-grid .settings-section .settings-danger-copy {
+   text-align: center;
+   margin: 0 auto 12px;
+}
+
+#settings-tab .settings-bottom-grid .settings-section .settings-auto-raid-toggle,
+#settings-tab .settings-bottom-grid .settings-section .danger-action-btn {
+   margin: 0 auto;
+   display: inline-flex;
+}
+
+#settings-tab .settings-section h3 {
    font-size: 19px;
    letter-spacing: 0.02em;
    margin-bottom: 5px;
 }
 
-#settings-modal #settings-tab .settings-bottom-grid .settings-section h3 {
+#settings-tab .settings-bottom-grid .settings-section h3 {
    text-align: center;
 }
 
-#settings-modal #settings-tab .db-drop-zone {
+#settings-tab .db-drop-zone {
    min-height: 64px;
    border-style: solid;
    border-color: color-mix(in srgb, var(--color-border-light) 62%, var(--color-border));
    background: color-mix(in srgb, var(--color-surface) 84%, var(--color-bg-dark));
 }
 
-#settings-modal #settings-tab .db-status-list {
+#settings-tab .db-status-list {
    display: grid;
    grid-template-columns: 1fr;
    gap: 6px;
@@ -1021,7 +1046,7 @@
    margin-bottom: 2px;
 }
 
-#settings-modal #settings-tab .db-status-row {
+#settings-tab .db-status-row {
    align-items: center;
    justify-content: space-between;
    flex-direction: row;
@@ -1029,60 +1054,60 @@
    padding: 5px 7px;
 }
 
-#settings-modal #settings-tab .db-status-label,
-#settings-modal #settings-tab .db-status-value {
+#settings-tab .db-status-label,
+#settings-tab .db-status-value {
    font-size: 0.97rem;
    line-height: 1.2;
 }
 
-#settings-modal #settings-tab .db-status-value {
+#settings-tab .db-status-value {
    text-align: right;
 }
 
-#settings-modal #settings-tab .db-permission-help,
-#settings-modal #settings-tab .settings-danger-copy,
-#settings-modal #settings-tab .settings-compact-hint {
+#settings-tab .db-permission-help,
+#settings-tab .settings-danger-copy,
+#settings-tab .settings-compact-hint {
    font-size: 0.94rem;
    line-height: 1.3;
    margin: 2px 0 4px;
 }
 
-#settings-modal #settings-tab .db-action-buttons {
+#settings-tab .db-action-buttons {
    grid-template-columns: repeat(3, minmax(0, 1fr));
    gap: 6px;
 }
 
-#settings-modal #settings-tab .db-action-buttons button,
-#settings-modal #settings-tab .modal-buttons button,
-#settings-modal #settings-tab .db-guide-btn,
-#settings-modal #settings-tab .danger-action-btn {
+#settings-tab .db-action-buttons button,
+#settings-tab .modal-buttons button,
+#settings-tab .db-guide-btn,
+#settings-tab .danger-action-btn {
    min-height: 41px;
    font-size: 0.99rem;
    padding: 7px 12px;
 }
 
-#settings-modal #settings-tab .settings-chip {
+#settings-tab .settings-chip {
    font-size: 0.95rem;
    padding: 5px 13px;
 }
 
-#settings-modal #settings-tab .settings-confirm-card {
+#settings-tab .settings-confirm-card {
    width: min(95vw, 506px);
 }
 
-#settings-modal #settings-tab .settings-confirm-card h3 {
+#settings-tab .settings-confirm-card h3 {
    font-size: 1.26rem;
 }
 
-#settings-modal #settings-tab .settings-confirm-card p {
+#settings-tab .settings-confirm-card p {
    font-size: 1.1rem;
 }
 
-#settings-modal #settings-tab .settings-confirm-card label {
+#settings-tab .settings-confirm-card label {
    font-size: 1.05rem;
 }
 
-#settings-modal #settings-tab .settings-auto-raid-toggle {
+#settings-tab .settings-auto-raid-toggle {
    margin-top: 6px;
    margin-bottom: 0;
 }
@@ -1094,41 +1119,41 @@
       max-height: calc(100vh - 14px);
    }
 
-   #settings-modal #settings-tab .settings-bottom-grid {
+   #settings-tab .settings-bottom-grid {
       grid-template-columns: 1fr;
    }
 
-   #settings-modal #settings-tab .db-status-list {
+   #settings-tab .db-status-list {
       grid-template-columns: 1fr;
    }
 }
 
-#settings-modal #settings-tab .db-drop-zone.dragover {
+#settings-tab .db-drop-zone.dragover {
    border-color: color-mix(in srgb, var(--color-primary) 65%, var(--color-border));
    background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
    color: var(--color-text);
    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 34%, transparent);
 }
 
-#settings-modal #settings-tab .db-action-buttons button,
-#settings-modal #settings-tab .modal-buttons button,
-#settings-modal #settings-tab .db-guide-btn,
-#settings-modal #settings-tab .danger-action-btn {
+#settings-tab .db-action-buttons button,
+#settings-tab .modal-buttons button,
+#settings-tab .db-guide-btn,
+#settings-tab .danger-action-btn {
    border: 1px solid color-mix(in srgb, var(--color-border-light) 56%, var(--color-border));
    box-shadow: var(--shadow-xs);
    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
 }
 
-#settings-modal #settings-tab .db-action-buttons button:hover:not(:disabled),
-#settings-modal #settings-tab .modal-buttons button:hover:not(:disabled),
-#settings-modal #settings-tab .db-guide-btn:hover:not(:disabled),
-#settings-modal #settings-tab .danger-action-btn:hover:not(:disabled) {
+#settings-tab .db-action-buttons button:hover:not(:disabled),
+#settings-tab .modal-buttons button:hover:not(:disabled),
+#settings-tab .db-guide-btn:hover:not(:disabled),
+#settings-tab .danger-action-btn:hover:not(:disabled) {
    transform: translateY(-1px);
    box-shadow: var(--shadow-sm);
 }
 
-#settings-modal #settings-tab .db-action-buttons #reload-page-now-btn.reload-page-now-highlight,
-#settings-modal #settings-tab .db-action-buttons #grant-db-persistent-access-btn.grant-persistent-access-highlight {
+#settings-tab .db-action-buttons #reload-page-now-btn.reload-page-now-highlight,
+#settings-tab .db-action-buttons #grant-db-persistent-access-btn.grant-persistent-access-highlight {
    border-color: color-mix(in srgb, var(--color-warning) 65%, var(--color-border));
    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-warning) 38%, transparent), var(--shadow-sm);
    animation: settingsReloadPulse 1.35s ease-in-out infinite;
@@ -1146,16 +1171,16 @@
    }
 }
 
-#settings-modal #settings-tab .db-status-row {
+#settings-tab .db-status-row {
    border-color: color-mix(in srgb, var(--color-border-light) 54%, var(--color-border));
 }
 
-#settings-modal #settings-tab .db-permission-help,
-#settings-modal #settings-tab .settings-danger-copy {
+#settings-tab .db-permission-help,
+#settings-tab .settings-danger-copy {
    color: #bac3d7;
 }
 
-#settings-modal #settings-tab .settings-confirm-overlay {
+#settings-tab .settings-confirm-overlay {
    position: fixed;
    inset: 0;
    z-index: 2200;
@@ -1166,7 +1191,7 @@
    backdrop-filter: blur(3px);
 }
 
-#settings-modal #settings-tab .settings-confirm-card {
+#settings-tab .settings-confirm-card {
    width: min(94vw, 460px);
    border: 1px solid color-mix(in srgb, var(--color-border-light) 62%, var(--color-border));
    border-radius: var(--radius-lg);
@@ -1179,25 +1204,25 @@
    gap: 8px;
 }
 
-#settings-modal #settings-tab .settings-confirm-card h3 {
+#settings-tab .settings-confirm-card h3 {
    margin: 0;
    font-size: 1.15rem;
    color: var(--color-primary);
 }
 
-#settings-modal #settings-tab .settings-confirm-card p {
+#settings-tab .settings-confirm-card p {
    margin: 0;
    color: var(--color-text-secondary);
    font-size: 1rem;
    line-height: 1.45;
 }
 
-#settings-modal #settings-tab .settings-confirm-card label {
+#settings-tab .settings-confirm-card label {
    color: var(--color-text);
    font-size: 0.95rem;
 }
 
-#settings-modal #settings-tab .settings-confirm-card input {
+#settings-tab .settings-confirm-card input {
    width: 100%;
    padding: 9px 10px;
    border: 1px solid var(--color-border);
@@ -1206,18 +1231,170 @@
    color: var(--color-text);
 }
 
-#settings-modal #settings-tab .settings-confirm-actions {
+#settings-tab .settings-confirm-actions {
    display: flex;
    justify-content: flex-end;
    gap: 8px;
 }
 
-#settings-modal #settings-tab .settings-confirm-actions button {
+#settings-tab .settings-confirm-actions button {
    min-height: 34px;
    padding: 0 12px;
 }
 
-#settings-modal #settings-tab .settings-confirm-actions .danger-action-btn {
+#settings-tab .settings-confirm-actions .danger-action-btn {
    border-color: color-mix(in srgb, var(--color-error) 45%, var(--color-border));
+}
+
+/* ===========================
+   Settings layout (main-route page with sidebar)
+   =========================== */
+#settings-tab.settings-layout {
+   display: grid;
+   grid-template-columns: 220px 1fr;
+   gap: var(--spacing-lg);
+   max-width: 1280px;
+   margin: 0 auto;
+   padding: var(--spacing-xl);
+   align-items: start;
+}
+
+#settings-tab.settings-layout .settings-sidebar {
+   position: sticky;
+   top: var(--spacing-md);
+   background: color-mix(in srgb, var(--color-surface-light) 88%, var(--color-surface));
+   border: 1px solid var(--color-border);
+   border-radius: var(--radius-md);
+   padding: var(--spacing-sm);
+}
+
+#settings-tab.settings-layout .settings-sidebar nav ul {
+   list-style: none;
+   margin: 0;
+   padding: 0;
+   display: flex;
+   flex-direction: column;
+   gap: 2px;
+}
+
+#settings-tab.settings-layout .settings-sidebar__item {
+   width: 100%;
+   text-align: left;
+   padding: 10px 12px;
+   background: transparent;
+   border: none;
+   border-left: 3px solid transparent;
+   border-radius: var(--radius-sm);
+   color: var(--color-text-secondary);
+   font-size: 0.95rem;
+   font-weight: 600;
+   cursor: pointer;
+   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+#settings-tab.settings-layout .settings-sidebar__item:hover {
+   background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+   color: var(--color-text);
+}
+
+#settings-tab.settings-layout .settings-sidebar__item.active {
+   background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+   border-left-color: var(--color-primary);
+   color: var(--color-primary);
+}
+
+#settings-tab.settings-layout .settings-main {
+   min-width: 0;
+}
+
+@media (max-width: 720px) {
+   #settings-tab.settings-layout {
+      grid-template-columns: 1fr;
+   }
+
+   #settings-tab.settings-layout .settings-sidebar {
+      position: static;
+   }
+}
+
+/* ===========================
+   Roster Manage modal (embeds RosterPage)
+   =========================== */
+.roster-manage-modal {
+   position: fixed;
+   inset: 0;
+   z-index: 10030;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+}
+
+.roster-manage-modal .modal-overlay {
+   position: absolute;
+   inset: 0;
+   background: rgba(0, 0, 0, 0.72);
+   backdrop-filter: none;
+   filter: none;
+   z-index: 1;
+}
+
+.roster-manage-modal .roster-manage-content {
+   position: relative;
+   z-index: 2;
+   width: min(96vw, 1600px);
+   max-width: 96vw;
+   height: min(94vh, 1100px);
+   max-height: 94vh;
+   overflow: auto;
+   background: var(--color-surface);
+   border: 1px solid var(--color-border);
+   border-radius: var(--radius-lg);
+   box-shadow: var(--shadow-lg);
+   padding: var(--spacing-md);
+}
+
+.roster-manage-modal .roster-manage-content > .close-btn {
+   position: absolute;
+   top: 10px;
+   right: 10px;
+   z-index: 2;
+   width: 34px;
+   height: 34px;
+   border-radius: var(--radius-full);
+   background: var(--color-surface-light);
+   color: var(--color-text);
+   border: 1px solid var(--color-border);
+   font-size: 1.2rem;
+   cursor: pointer;
+}
+
+/* Reset font-size inheritance from #settings-tab (1.26em) and strip tab-content
+   card styling from RosterPage when embedded in manage modal */
+.roster-manage-modal .roster-manage-content {
+   font-size: 1rem;
+}
+
+.roster-manage-modal #roster-tab,
+.roster-manage-modal #roster-tab.tab-content {
+   background: transparent;
+   border: none;
+   box-shadow: none;
+   padding: 0;
+   max-width: none;
+   width: 100%;
+   margin: 0;
+   margin-inline: 0;
+}
+
+/* Let the character card grid fill the full modal width with auto-fit columns */
+.roster-manage-modal #roster-list {
+   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+   justify-content: stretch;
+}
+
+/* Reserve space for the absolute close-btn on the top-right so the primary
+   Refresh button doesn't end up tucked behind the × glyph. */
+.roster-manage-modal #roster-tab .roster-header {
+   padding-right: 52px;
 }
 

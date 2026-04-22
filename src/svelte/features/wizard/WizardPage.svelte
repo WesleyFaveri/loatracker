@@ -5,10 +5,11 @@
   import { TOAST_TYPES } from '../../legacy/config/constants.js';
   import { BibleApiRequestError, BibleApiService } from '../../services/BibleApiService';
   import { formatCombatPowerDisplay, formatItemLevelDisplay } from '../../utils/formValidator';
-  import { notifyRosterChanged } from '../../stores/rosterSync';
+  import { notifyRosterChanged, requestManageRoster } from '../../stores/rosterSync';
   import { reportError } from '../../utils/errorHandler';
   import { withAsyncError } from '../../utils/errorWrappers';
   import { ERROR_CODES } from '../../utils/errorCodes';
+  import ManualCharacterModal from '../roster/ManualCharacterModal.svelte';
 
   type Character = {
     name: string;
@@ -62,6 +63,8 @@
   let cooldownRemaining = 0;
   let cooldownTimer: ReturnType<typeof setInterval> | null = null;
 
+  let manualAddModalOpen = false;
+
   $: selectedCount = foundCharacters.filter((character) => character.selected).length;
   $: importLabel = selectedCount > 0
     ? `Import ${selectedCount} Character${selectedCount > 1 ? 's' : ''}`
@@ -108,12 +111,42 @@
     mathiProgressVisible = false;
   }
 
-  function openManualFlow() {
+  /**
+   * Opens the standalone "Add character manually" modal targeting the currently
+   * active roster. Previously this navigated the user to the roster page and
+   * required a second click on Manage → Manual; the modal removes that friction
+   * so users can add a character without leaving Tracker Integration.
+   */
+  function openManualAddModal() {
+    manualAddModalOpen = true;
+  }
+
+  function closeManualAddModal() {
+    manualAddModalOpen = false;
+  }
+
+  /**
+   * After adding a character manually, route the user to the Rosters settings
+   * screen with a pending Manage request so they land directly on the roster
+   * view and can see the new character without extra clicks.
+   */
+  function handleManualAdded(rosterId: string) {
+    requestManageRoster(rosterId);
+    window.location.hash = 'settings/rosters';
+  }
+
+  /**
+   * After a successful Bible import we send the user to the roster view so they
+   * can review the newly-imported characters. Falls back to the Rosters
+   * settings section when no navigation handler is supplied (standalone wizard
+   * modal context).
+   */
+  function navigateToRosterAfterImport() {
     if (onNavigateToRoster) {
       onNavigateToRoster();
       return;
     }
-    window.location.hash = 'roster';
+    window.location.hash = 'settings/rosters';
   }
 
   function normalizeClass(value: string | null | undefined) {
@@ -387,7 +420,7 @@
       showToast(`${imported} character${imported !== 1 ? 's' : ''} imported, ${updated} updated`, TOAST_TYPES.SUCCESS);
       progressText = `Imported: ${imported}, Updated: ${updated}`;
       requestModalClose();
-      openManualFlow();
+      navigateToRosterAfterImport();
       return true;
     }, {
       code: ERROR_CODES.SYNC.SAVE_FAILED,
@@ -431,7 +464,7 @@
 
     <div class="wizard-manual">
       <p>Or add your characters manually:</p>
-      <button id="wizard-manual-btn" class="wizard-secondary-btn" type="button" on:click={openManualFlow}>Add Manually</button>
+      <button id="wizard-manual-btn" class="wizard-secondary-btn" type="button" on:click={openManualAddModal}>Add Manually</button>
     </div>
   </section>
 {:else if currentStep === 'mathimoe'}
@@ -540,3 +573,9 @@
     </div>
   </section>
 {/if}
+
+<ManualCharacterModal
+  open={manualAddModalOpen}
+  onClose={closeManualAddModal}
+  onAfterAdd={handleManualAdded}
+/>

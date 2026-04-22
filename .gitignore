@@ -19,3 +19,6 @@ supabase/
 Thumbs.db
 # Gemini CLI context file
 GEMINI.md
+
+# Claude 
+.claude/
